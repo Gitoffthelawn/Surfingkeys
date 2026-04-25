@@ -670,7 +670,8 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         window.location.href = window.location.href.replace(/\#[^\#]*$/, '');
     });
     mapkey('gU', '#4Go to root of current URL hierarchy', function() {
-        window.location.href = window.location.origin;
+        window.location.href = window.location.href.replace(new RegExp('(://([^/]+/){'+RUNTIME.repeats+'}).*'), '$1');
+        RUNTIME.repeats = 1;
     });
     mapkey('gxt', '#3Close tab on left', function() {
         RUNTIME("closeTabLeft");

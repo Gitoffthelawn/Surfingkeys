@@ -27,7 +27,7 @@ import {
 } from './utils.js';
 
 function placeHintsHost(host) {
-    let topLayerElement = document.querySelector("dialog");
+    let topLayerElement = document.querySelector("dialog[open]");
     if (!topLayerElement || !isElementDrawn(topLayerElement)) {
         topLayerElement = document.documentElement;
     }

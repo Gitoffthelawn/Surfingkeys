@@ -1,16 +1,16 @@
-# Surfingkeys - Expand your browser with javascript and keyboard.
+# Surfingkeys - Expand your browser with JavaScript and keyboard.
 
 [![Node CI](https://github.com/brookhong/Surfingkeys/workflows/Node%20CI/badge.svg?branch=master)](https://github.com/brookhong/Surfingkeys/actions?query=workflow%3A%22Node+CI%22+branch%3Amaster)
 
-Surfingkeys is another web browser(including Google Chrome, Chromium based browsers, Firefox, Safari) extension that provides keyboard-based navigation and control of the web in the spirit of the VIM editor. But it's not for VIM users only, it's for anyone who just needs some more shortcuts to their own functions.
+Surfingkeys is a browser extension (for Google Chrome, Chromium-based browsers, Firefox, and Safari) that provides keyboard-based navigation and control of the web in the spirit of the VIM editor. But it's not just for VIM users; it's for anyone who needs more shortcuts for their own functions.
 
-Surfingkeys is created with all settings described in Javascript, so it's easy for anyone to map any keystrokes to their own defined Javascript function. For example,
+Surfingkeys is created with all settings described in JavaScript, so it's easy for anyone to map any keystrokes to their own defined JavaScript functions. For example,
 
     api.mapkey('<Ctrl-y>', 'Show me the money', function() {
         api.Front.showPopup('a well-known phrase uttered by characters in the 1996 film Jerry Maguire (Escape to close).');
     });
 
-Surfingkeys is doing its best to make full use of keyboard for web browsing, but there are some limitations from Google Chrome itself, please see [Brook Build of Chromium](https://brookhong.github.io/2021/04/18/brook-build-of-chromium.html) for a more thorough experience.
+Surfingkeys does its best to make full use of the keyboard for web browsing, but there are some limitations from Google Chrome itself; please see the [Brook Build of Chromium](https://brookhong.github.io/2021/04/18/brook-build-of-chromium.html) for a more thorough experience.
 
 ## Installation
 
@@ -19,7 +19,7 @@ Surfingkeys is doing its best to make full use of keyboard for web browsing, but
 * [Surfingkeys - Chrome Web Store](https://chrome.google.com/webstore/detail/surfingkeys/gfbliohnnapiefjpjlpjnehglfpaknnc) for Google Chrome, Chromium based browsers
 * [Surfingkeys – Get this Extension for 🦊 Firefox](https://addons.mozilla.org/en-US/firefox/addon/surfingkeys_ff/) for Firefox
 * [Surfingkeys - Microsoft Edge Addons](https://microsoftedge.microsoft.com/addons/detail/kgnghhfkloifoabeaobjkgagcecbnppg) for Microsoft Edge
-* [Surfingkeys on the Mac App Store](https://apps.apple.com/us/app/surfingkeys/id1609752330) for Safari, works for both macOS and iOS, except that for iOS an external keyboard is required to be connected with your device. There is one exception of the [special feature designed for iOS device](https://youtu.be/xaTf2booQkQ) -- `Search selected with`.
+* [Surfingkeys on the Mac App Store](https://apps.apple.com/us/app/surfingkeys/id1609752330) for Safari, works on both macOS and iOS, except that on iOS an external keyboard must be connected to your device. There is one exception of the [special feature designed for iOS devices](https://youtu.be/xaTf2booQkQ) -- `Search selected with`.
 
 ### Feature availability
 | Features \ Browsers | Chromium family (above 45) | Firefox (above 57) | Safari (above 15) |
@@ -71,13 +71,13 @@ Surfingkeys is doing its best to make full use of keyboard for web browsing, but
 * [License](#license)
 
 ## Feature list
-* All settings are set up within a javascript file, which makes it easy to create mapping to user customized function.
+* All settings are set up within a javascript file, which makes it easy to create mappings to user-customized functions.
 * A large cursor in visual mode, which makes visual mode better.
 * Search selected with, which works in both normal mode and visual mode.
 * Help messages are automatically generated for mappings.
 * `*` to search word under cursor in visual mode.
-* Scroll actions like page up/down (`e` `d`) work for not only top window but also scrollable DIV.
-* `w` to switch frames if there is.
+* Scroll actions like page up/down (`e` `d`) work not only for the top window but also for scrollable DIVs.
+* `w` to switch frames if there are any.
 * Session management
 * A versatile bookmark/url finder
 * Count prefixes to repeat actions
@@ -86,13 +86,13 @@ Surfingkeys is doing its best to make full use of keyboard for web browsing, but
 * `;pm` to preview markdown
 * Emoji completion in Insert mode
 * Rich hints for keystroke
-* Everything in Surfingkeys works for PDF
+* Everything in Surfingkeys works for PDFs
 * Regional Hints mode
 * Chat with LLM
 
 ## Quick start
 
-After you install the extension from [Chrome Web Store](https://chrome.google.com/webstore/detail/surfingkeys/gfbliohnnapiefjpjlpjnehglfpaknnc) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/surfingkeys_ff/), open a site you'd like. Then press `?` or `u` to take a quick look on the default mappings first. Press `Esc` to hide the usage popover.
+After you install the extension from [Chrome Web Store](https://chrome.google.com/webstore/detail/surfingkeys/gfbliohnnapiefjpjlpjnehglfpaknnc) or [Firefox Add-ons](https://addons.mozilla.org/en-US/firefox/addon/surfingkeys_ff/), open a site you'd like to browse. Then press `?` or `u` to take a quick look at the default mappings first. Press `Esc` to hide the usage popover.
 
 Try some mappings described in the usage popover. For example, press `e` to scroll a page up, `d` to scroll a page down, `;e` to open settings page.
 
@@ -117,20 +117,20 @@ There are three modes in Surfingkeys: normal, visual and insert.
 
 When you open a page, it enters normal mode automatically. All mappings added with `mapkey` work in this mode.
 
-### Visual mode, the mode for text selection, and actions on the selected text.
+### Visual mode, the mode for text selection and actions on the selected text.
 
-Press `v` to toggle visual mode. You'll see an indicator at bottom of current page - `Caret` or `Range`, and a large cursor on page. The cursor is made large for visibility, as sometimes it's not easy for human to locate a normal cursor on a web page.
+Press `v` to toggle visual mode. You'll see an indicator at the bottom of the current page - `Caret` or `Range`, and a large cursor on the page. The cursor is made large for visibility, as sometimes it's not easy for humans to locate a normal cursor on a web page.
 
-`Caret` indicates that cursor is moved when you press jkhl, `Range` indicates that you'll select text when moving cursor.
+`Caret` indicates that the cursor is moved when you press jkhl, `Range` indicates that you'll select text when moving the cursor.
 
 Now here is a small practice,
 
-1. press `v` you'll see `Caret`
-1. use the VIM key bindings to move cursor to some where.
+1. press `v`, you'll see `Caret`
+1. use the VIM key bindings to move the cursor somewhere.
 1. press `v` again, you'll see `Range`.
 1. use the VIM key bindings to select some text.
 1. press `sg` to see what will happen.
-1. press `v` again to back to normal mode.
+1. press `v` again to go back to normal mode.
 
 All mappings added with `vmapkey` work in this mode, with some built-in mappings like those in VIM - `j` `k` `h` `l` `b` `w` `0` `$` etc.
 
@@ -144,15 +144,15 @@ All mappings added with `vmapkey` work in this mode, with some built-in mappings
 
 ### Hints mode
 
-Press `f` to enter Hints mode to follow links. There are several other keystrokes to enter Hints mode with some different behavior, such as `cf` for continuous following, `af` for active following.
+Press `f` to enter Hints mode to follow links. There are several other keystrokes to enter Hints mode with different behaviors, such as `cf` for continuous following, `af` for active following.
 
-Default hint characters for links are `asdfgqwertzxcvb`, it quits when a non-hint key is pressed. Add below line to your settings to make it right hand:
+The default hint characters for links are `asdfgqwertzxcvb`. Hints mode quits when a non-hint key is pressed. Add the line below to your settings to make it right-handed:
 
     api.Hints.setCharacters('yuiophjklnm'); // for right hand
 
 When hints are overlapped, press `Shift` to flip them. Hold `space` to hold hints temporarily, release `space` to restore hints.
 
-Hints are placed in center of target links, you could add below line in your settings to let them aligned left.
+Hints are placed at the center of target links; you could add the line below to your settings to align them left.
 
     settings.hintAlign = "left";
 
@@ -165,33 +165,35 @@ Press `L` to enter regional Hints mode by picking a visually large element. Ther
 * `ch` to copy HTML from target element
 * `d` to delete target element
 * `l` to chat with AI about the text of the element
+* `p` to select the parent element of the target element
 
 [Demo on YouTube](https://www.youtube.com/watch?v=pFPOzAZDO38)
 
 ### Insert mode
 
-When focus is switched into any editable element by whatever means(`i` hints or `f` hints or mouse click), Insert mode is on.
+When focus is switched into any editable element by whatever means (`i` hints, `f` hints, or mouse click), Insert mode is on.
 
 All mappings added with `imapkey` work in this mode.
 
-* `Ctrl - i` to open vim editor to edit.
-* `Ctrl - '` to toggle quotes in an input element, this is useful for search engines like google.
-* `Ctrl-e` move the cursor to the end of the line.
-* `Ctrl-a` move the cursor to the beginning of the line, use `Ctrl-f` in Windows to avoid conflict with select all.
-* `Ctrl-u` delete all entered characters before the cursor.
-* `Alt-b` move the cursor Backward 1 word.
-* `Alt-f` move the cursor Forward 1 word.
-* `Alt-w` delete a word backwards.
-* `Alt-d` delete a word forwards.
+* `Ctrl-i` to open vim editor to edit.
+* `Ctrl-'` to toggle quotes in an input element, which is useful for search engines like Google.
+* `Ctrl-e` to move the cursor to the end of the line.
+* `Ctrl-a` to move the cursor to the beginning of the line; use `Ctrl-f` in Windows to avoid conflict with select all.
+* `Ctrl-u` to delete all entered characters before the cursor.
+* `Alt-b` to move the cursor backward 1 word.
+* `Alt-f` to move the cursor forward 1 word.
+* `Alt-w` to delete a word backwards.
+* `Alt-d` to delete a word forwards.
+* `Ctrl-g` to correct the grammar of the current input with LLM.
 
-`imap` and `iunmap` for insert mode.
+`imap` and `iunmap` work for insert mode.
 
     api.imap(',,', "<Esc>");        // press comma twice to leave current input box.
     api.imap(';;', "<Ctrl-'>");     // press semicolon twice to toggle quote.
 
 #### Emoji completion
 
-When user inputs a colon and 2(set by `settings.startToShowEmoji`) characters such as `:gr` in insert mode, Surfingkeys will try to find matched emoji, and list them out if there are some found.
+When a user inputs a colon and 2 (set by `settings.startToShowEmoji`) characters such as `:gr` in insert mode, Surfingkeys will try to find matching emoji and list them if any are found.
 
 ![emoji](https://cloud.githubusercontent.com/assets/288207/23602453/924ed762-028b-11e7-86f3-bf315c0a2499.gif)
 
@@ -207,19 +209,19 @@ If you'd like emoji suggestions popup as soon as you input colon, use below:
 
 ### Find
 
-`Find` is not actually a mode, it just another way to enter visual mode. Press `/` to open find bar, which sits at almost the same position with Mode indicator, type something there. All occurrences of your input will be highlighted. Press `Enter` to finish the finding, and you're in `Caret` visual mode now, press `n` to find next, `N` to find previous.
+`Find` is not actually a mode; it's just another way to enter visual mode. Press `/` to open the find bar, which sits at almost the same position as the Mode indicator, and type something there. All occurrences of your input will be highlighted. Press `Enter` to finish the finding, and you're in `Caret` visual mode now; press `n` to find next, `N` to find previous.
 
-Press `Ctrl-Enter` to find exactly the whole word input, like with the input `\bkeyword\b`.
+Press `Ctrl-Enter` to find the exact whole word entered, like with the input `\bkeyword\b`.
 
 ### PassThrough mode
 
-To press `Alt-i` to enter PassThrough mode gives you a chance to temporarily suppress SurfingKeys, which means Surfingkeys will not care any key press until leaving this mode by pressing `Esc`. In this mode, you could use built-in shortcuts from any site itself. Please see [Feature Request: implement Vimium-style insert mode · Issue #656](https://github.com/brookhong/Surfingkeys/issues/656) for why we brought this in and the difference between `Alt-i` and `Alt-s`.
+Pressing `Alt-i` to enter PassThrough mode gives you a chance to temporarily suppress SurfingKeys, which means Surfingkeys will not care about any key press until you leave this mode by pressing `Esc`. In this mode, you could use built-in shortcuts from any site itself. Please see [Feature Request: implement Vimium-style insert mode · Issue #656](https://github.com/brookhong/Surfingkeys/issues/656) for why we brought this in and the difference between `Alt-i` and `Alt-s`.
 
-To press `p` to enter ephemeral PassThrough mode, which will automatically quit after 1 second.
+Pressing `p` enters an ephemeral PassThrough mode, which automatically quits after 1 second.
 
 ### Lurk mode
 
-User can specify the pages where Surfingkeys will lurk until it is called out by `Alt-i` or `p`(for ephemeral case), such as
+Users can specify the pages where Surfingkeys will lurk until it is called out by `Alt-i` or `p` (for the ephemeral case), such as
 
     settings.lurkingPattern = /https:\/\/github\.com|.*confluence.*/i;
 
@@ -229,16 +231,16 @@ API `lmap` can be used to change the shortcuts, for example,
 
     api.lmap("<Alt-j>", "<Alt-i>");
 
-The extension icon in toolbar reflects current status of Surfingkeys,
+The extension icon in the toolbar reflects the current status of Surfingkeys:
 
 * Grey -- disabled.
-* Half Grey/Half Color -- lurking.
+* Half grey/half color -- lurking.
 * Color -- enabled.
 ## Omnibar
 
-The omnibar provides kinds of functions that need user input, for example,
+The omnibar provides various functions that need user input, for example,
 
-* Open url(from both bookmarks and history) with `t`
+* Open URLs (from both bookmarks and history) with `t`
 * Open bookmarks with `b`
 * Open search engines with `og` / `ow` ...
 * Open commands with `:`
@@ -255,37 +257,37 @@ The omnibar provides kinds of functions that need user input, for example,
 
 In omnibar opened with `t`:
 
-`Ctrl - d` to delete from bookmark or history
+`Ctrl-d` to delete from bookmarks or history
 
 In omnibar opened with `b`:
 
-`Ctrl - Shift - <any letter>` to create vim-like mark
+`Ctrl-Shift-<any letter>` to create a vim-like mark
 
 ![search_engine](https://cloud.githubusercontent.com/assets/288207/17644214/759ef1d4-61b3-11e6-9bd9-70c38c8b80e0.gif)
 
-`cmap` could be used for Omnibar to change mappings, for example:
+`cmap` can be used for the Omnibar to change mappings, for example:
 
     api.cmap('<Ctrl-n>', '<Tab>');
     api.cmap('<Ctrl-p>', '<Shift-Tab>');
 
 ### Add bookmark
-`ab` is a shortcut to bookmark current page. An Omnibar is displayed for you to choose a folder to place the new bookmark after you pressed `ab`. If you want to place the new bookmark into a new folder, you could input folder name -- **which must be ended with `/`** in Omnibar. For example, I choose folder `/Bookmarks Bar/tool/`, and append `abc/`, then current page will be bookmarked into `/Bookmarks Bar/tool/abc/`. If there is no `/` behind `abc`, `abc` will be used as title of the new bookmark.
+`ab` is a shortcut to bookmark the current page. After you press `ab`, an Omnibar is displayed for you to choose a folder in which to place the new bookmark. If you want to place the new bookmark into a new folder, you can type the folder name -- **which must end with `/`** -- in the Omnibar. For example, I choose folder `/Bookmarks Bar/tool/`, and append `abc/`, then current page will be bookmarked into `/Bookmarks Bar/tool/abc/`. If there is no `/` behind `abc`, `abc` will be used as the title of the new bookmark.
 
 ## Search selected with
 
-My favorite feature from when I was using Firefox. For both Firefox and Chrome, the extensions make it through context menu. Surfingkeys makes it through key mappings. By default, when you press `sg` in normal mode, it will search selected text with google, if there is none selected, it will search text from system clipboard with google. In visual mode, it will search selected text with google.
+My favorite feature from when I used Firefox. Both Firefox and Chrome extensions provide it through the context menu; Surfingkeys provides it through key mappings. By default, when you press `sg` in normal mode, it will search the selected text with Google; if there is none selected, it will search text from the system clipboard with Google. In visual mode, it will search the selected text with Google.
 
-The `g` in `sg` is a search alias for google, there are some other built-in search aliases -- like `w` for bing. So press `sw` to search selected with bing. Refer to [Add search alias to omnibar](https://github.com/brookhong/Surfingkeys/blob/master/docs/API.md#addsearchalias) to add your own search alias, especially those search engines for company inside.
+The `g` in `sg` is a search alias for Google; there are some other built-in search aliases, like `w` for Bing. So press `sw` to search the selected text with Bing. Refer to [Add search alias to omnibar](https://github.com/brookhong/Surfingkeys/blob/master/docs/API.md#addsearchalias) to add your own search alias, especially those search engines for company inside.
 
-Besides that, there is a `sog`, to search selected text only in this site with google. For `sog`, `s` is the search_leader_key, `o` is the only_this_site_key, `g` is the search alias.
+Besides that, there is `sog`, to search the selected text only within this site with Google. For `sog`, `s` is the search_leader_key, `o` is the only_this_site_key, `g` is the search alias.
 
-The search_leader_key `s` plus capital alias `G` will search selected with google interactively, all other search aliases and those you added through API `addSearchAlias` work in same way.
+The search_leader_key `s` plus the capital alias `G` will search the selected text with Google interactively; all other search aliases and those you added through API `addSearchAlias` work in the same way.
 
 ## Vim-like marks
 
-You can create vim-like marks by pressing `m`, followed by a word character(0-9 / a-z / A-Z), used as mark name. For example, if you press `ma` on this page, you'll create a mark named `a` which points to this page. Then pressing `'a` anywhere, you'll jump to this page.
+You can create vim-like marks by pressing `m` followed by a word character (0-9 / a-z / A-Z), which is used as the mark name. For example, if you press `ma` on this page, you'll create a mark named `a` which points to this page. Then pressing `'a` anywhere will jump to this page.
 
-In this way, the created mark always points to current URL. You can also create vim-like marks from the bookmarks. Try following steps:
+In this way, the created mark always points to the current URL. You can also create vim-like marks from the bookmarks. Try the following steps:
 
 1. press `b` to open bookmarks.
 1. type something to locate the URL you'd like to create vim-like mark for.
@@ -293,17 +295,17 @@ In this way, the created mark always points to current URL. You can also create 
 
 Then afterwards `'F` will open that URL directly.
 
-This is very useful for those pages you access very frequently. `om` to check out all the vim-like marks you have created.
+This is very useful for pages you access frequently. Press `om` to check out all the vim-like marks you have created.
 
 ## Switch tabs
 
-By default, pressing `T` will show all opened tabs in an overlay, then pressing the hint char, will switch to the related tab.
+By default, pressing `T` shows all opened tabs in an overlay; pressing the hint character then switches to the related tab.
 
 ![tabs_overlay](https://github.com/brookhong/Surfingkeys/assets/288207/f0ca339d-133f-4fb0-b902-cdc64fc71374)
 
 If there is no hint label matched with your pressing, omnibar will be opened. So you can always press a non-hint character such as `;` or `j` to launch omnibar directly from the tabs overlay.
 
-There is also `settings.tabsThreshold` here. When total of opened tabs exceeds `settings.tabsThreshold`, omnibar will be used for choosing tabs.
+There is also `settings.tabsThreshold` here. When the total number of opened tabs exceeds `settings.tabsThreshold`, the omnibar will be used for choosing tabs.
 
 ![tabs_omnibar](https://cloud.githubusercontent.com/assets/288207/10544630/1fbdd02c-7457-11e5-823c-14411311c315.png)
 
@@ -317,21 +319,21 @@ which works same as:
 
     settings.tabsThreshold = 0;
 
-The tabs are displayed in MRU order by default, either in omnibar or overlay. If you want them in natural order, use:
+The tabs are displayed in MRU order by default, either in the omnibar or the overlay. If you want them in natural order, use:
 
     settings.tabsMRUOrder = false;
 
 ## Windows management
 
-`W` will bring up a popup of Windows, you can select one of them and press `Enter` to move current tab to the selected window. If there is only one window, `W` will move current tab to a new window directly.
+`W` brings up a popup of windows; you can select one of them and press `Enter` to move the current tab to the selected window. If there is only one window, `W` will move the current tab to a new window directly.
 
-`;gt` will open Omnibar with all tabs not from current window, you could input some text to filter the tabs, then press `Enter` to gather the filtered tabs into current window. `;gw` will gather all tabs into current window.
+`;gt` opens the Omnibar with all tabs not from the current window; you can type some text to filter the tabs, then press `Enter` to gather the filtered tabs into the current window. `;gw` gathers all tabs into the current window.
 
-So to group your tabs into windows, you can use `W` to move one tab to a specified window or use `;gt` to gather filtered tabs into current window.
+So to group your tabs into windows, you can use `W` to move one tab to a specified window or use `;gt` to gather filtered tabs into the current window.
 
 ## Commands
 
-`:` to open omnibar for commands, then you can execute any pre-defined there. The result will be displayed below the omnibar.
+`:` opens the omnibar for commands, where you can execute any pre-defined commands there. The result will be displayed below the omnibar.
 
     // create shortcuts for the command with different parameters
     api.map(';pa', ':setProxyMode always');
@@ -344,17 +346,17 @@ Besides commands, you can also run javascript code.
 
 ## Smooth scroll
 
-Smooth scroll works for any scrollable element. It is on by default, to turn it off as below:
+Smooth scroll works for any scrollable element. It is on by default; to turn it off, use:
 
     settings.smoothScroll = false;
 
-`j`/`k` scrolls in one step with size as 70, you could change it as below:
+`j`/`k` scroll in one step with a size of 70; you could change it as below:
 
     settings.scrollStepSize = 140;
 
 ## Session management
 
-To create session in Chrome with Surfingkeys will save URLs for all tabs, and to open a session will open all the URLs of the session in different tab, so basically a session is a list of URLs, which has a name.
+To create a session in Chrome with Surfingkeys is to save the URLs of all tabs; to open a session is to open all of its URLs in separate tabs. So a session is basically a named list of URLs.
 
 * `ZZ` will save all current tabs into a session named `LAST` then quit.
 * `ZR` will restore the session named `LAST`.
@@ -378,21 +380,21 @@ To delete a session:
 
 ## Repeats action by pressing number before mapkey
 
-If you need repeat some action several times, just press a number before mapkey, such as `3d`, which will scroll down 3 pages. Repeats also works for Tab navigation, for example, you're now on the 1st Tab, and you want to switch to the 4th Tab,
+If you need to repeat some action several times, just press a number before the mapkey, such as `3d`, which will scroll down 3 pages. Repeats also work for tab navigation. For example, if you're now on the 1st Tab and you want to switch to the 4th Tab,
 
 * press `3R` to achieve that
 * `3E` will switch back to 1st Tab.
 
-Another example to move one Tab, say, you're on the 12th Tab of 23 tabs.
+Another example is to move one tab. Say you're on the 12th Tab of 23 tabs.
 
 * `11<<` will move current tab to beginning.
 * `10>>` will move current tab to end.
 
-Usually, you need not count the number, you just prefix a large number such as `99<<`, if you want to move a tab to beginning or end.
+Usually, you need not count the number; you can just prefix a large number such as `99<<` if you want to move a tab to the beginning or end.
 
 ## Hotkey to toggle Surfingkeys
 
-By default, `Alt-s` will toggle Surfingkeys for current site. When Surfingkeys is turned off, all mappings stop working except the hotkey. To change hotkey, use settings below:
+By default, `Alt-s` toggles Surfingkeys for the current site. When Surfingkeys is turned off, all mappings stop working except the hotkey. To change the hotkey, use the settings below:
 
     api.map('<Ctrl-i>', '<Alt-s>'); // hotkey must be one keystroke with/without modifier, it can not be a sequence of keystrokes like `gg`.
 
@@ -402,13 +404,13 @@ When Surfingkeys is turned off on some site by `Alt-s`, the status will be persi
         "https://github.com": 1
     },
 
-`Alt-s` once more will remove it from settings.blocklist. The data settings are not always presented in snippets, you could use `yj` to dump all settings into clipboard, then paste it in your text editor to check out.
+`Alt-s` once more will remove it from settings.blocklist. The settings data is not always presented in snippets; you can use `yj` to dump all settings into the clipboard, then paste it into your text editor to check.
 
 Another way to disable Surfingkeys is to use `settings.blocklistPattern`, please refer to [regex for disabling](https://github.com/brookhong/Surfingkeys/issues/63).
 
 ## Proxy settings
 
-SwitchySharp is a great extension to switch proxy, but my use case with it is very simple,
+SwitchySharp is a great extension for switching proxies, but my use case with it is very simple:
 
 1. create a profile using PAC script.
 1. maintain site list in the PAC script, use proxy if the site being accessed is in the list.
@@ -423,7 +425,7 @@ To avoid manually editing PAC script and reloading/switching profile by clicking
         setProxy 192.168.1.100:8080
         setProxy 127.0.0.1:1080 SOCKS5
 
-* setProxyMode, to set proxy mode, there are five modes: direct, byhost, bypass, always, system and clear.
+* setProxyMode, to set proxy mode; there are six modes: direct, byhost, bypass, always, system and clear.
 
         direct      Chrome will connect to all sites directly.
         byhost      Chrome will only connect to sites added in settings through related proxy. You could add multiple pairs of `proxy` and `hosts`, for hosts matched with `hosts` `proxy` will be used.
@@ -446,7 +448,7 @@ To avoid manually editing PAC script and reloading/switching profile by clicking
 
 ## VIM editor and Emacs editor
 
-Thanks ACE for the vim editor, Surfingkeys integrates ACE for the vim editor. The vim editor is used:
+Thanks to ACE for the vim editor, Surfingkeys integrates ACE for the vim editor. The vim editor is used:
 
 * to edit any input on html page
 * to edit URL to open in new tab
@@ -460,7 +462,7 @@ With Emacs keybindings, use `C-x C-s` to save your input.
 
 ### Edit any input on html page
 
-In normal mode, press capital `I`, then use a hint letter to pick up a input box. A vim editor is opened for you to edit text. The vim editor is opened in slightly different way for `<input>`, `<textarea>`, and `<select>` elements.
+In normal mode, press capital `I`, then use a hint letter to pick an input box. A vim editor is opened for you to edit text. The vim editor is opened in slightly different ways for `<input>`, `<textarea>`, and `<select>` elements.
 
 For `<input>` elements, the vim editor has only one line, and you use vim key bindings to edit your text. Then press `Enter` or `:w` to write your text back to the `<input>` element.
 
@@ -470,7 +472,7 @@ For `<textarea>` elements, the vim editor is opened in bigger size. After you co
 
 ![textarea_with_vim](https://cloud.githubusercontent.com/assets/288207/17644217/75a27e44-61b3-11e6-8f21-9cd79d3c5776.gif)
 
-For `<select>` elements, the vim editor is again opened in bigger size. Instead of editing the text, search for the desired option and jump to the line, then press `Enter` to select it. This is handy for `<select>` elements which have lots of options.
+For `<select>` elements, the vim editor is again opened in a bigger size. Instead of editing the text, search for the desired option and jump to the line, then press `Enter` to select it. This is handy for `<select>` elements which have lots of options.
 
 ![select_with_vim](https://cloud.githubusercontent.com/assets/288207/17644218/75a458a4-61b3-11e6-8ce7-eedcc996745c.gif)
 
@@ -484,7 +486,7 @@ Remember that in insert mode, press `Ctrl-i` to open the vim editor.
 
 ### Edit URL to open in new tab
 
-`;u` to open vim editor to edit current URL, then `Enter` or `:w` to open the input URL, which works just like address bar with vim-binding keys.
+`;u` opens the vim editor to edit the current URL, then `Enter` or `:w` opens the input URL, which works just like an address bar with vim-binding keys.
 
 `Tab` completion works with all URLs from bookmark/history, `Space` to choose a match from popup.
 
@@ -498,13 +500,13 @@ Remember that in insert mode, press `Ctrl-i` to open the vim editor.
 
 [Repeating previous actions](https://github.com/brookhong/Surfingkeys/issues/67)
 
-All keystrokes in normal mode are repeatable by dot, except those keystrokes mapped with `repeatIgnore` as `true`, for example,
+All keystrokes in normal mode are repeatable by dot, except those mapped with `repeatIgnore` as `true`, for example,
 
     api.mapkey('se', '#2My magic se', function() {
         // your code here
     }, {repeatIgnore: true});
 
-Then `.` will not repeat your magic action with `se`, even it is just pressed.
+Then `.` will not repeat your magic action with `se`, even if it was just pressed.
 
 ## Markdown preview
 
@@ -516,26 +518,26 @@ Then `.` will not repeat your magic action with `se`, even it is just pressed.
 
 ![markdown](https://cloud.githubusercontent.com/assets/288207/17669897/0b6fbaf6-6342-11e6-8583-86eb8691190d.gif)
 
-By default, Surfingkeys uses this [markdown parser](https://github.com/chjj/marked) to preview markdown, if you'd like to use [github markdown API](https://developer.github.com/v3/markdown/) to parse your markdown, please add below line to your settings:
+By default, Surfingkeys uses this [markdown parser](https://github.com/chjj/marked) to preview markdown. If you'd like to use the [github markdown API](https://developer.github.com/v3/markdown/) to parse your markdown, add the line below to your settings:
 
     settings.useLocalMarkdownAPI = false;
 
 ## Capture page
 
-There are some circumstances that you want to take a screenshot on a page, below shortcuts could help you, especially when it is for a long page or just for some scrollable DIV on the page.
+There are circumstances where you want to take a screenshot of a page; the shortcuts below can help, especially for a long page or for some scrollable DIV on the page.
 
 * `yg` to capture current page.
 * `yG` to capture current full page if it is scrollable.
 * `yS` to capture current scroll target.
 
-After one of above shortcuts pressed, you could see a popup of captured image, on which you could then right click with a MOUSE( 😢 ) to save as or copy into system clipboard.
+After pressing one of the above shortcuts, you'll see a popup of the captured image, on which you could then right-click with a mouse (😢) to save it as or copy it into the system clipboard.
 
 ## PDF viewer
-To make Surfingkeys work for PDF files, Surfingkeys integrates PDF viewer from the notable [pdf.js](https://github.com/mozilla/pdf.js). When a pdf file is opened in Chrome, the PDF viewer will be launched, and you could use everything from Surfingkeys then.
+To make Surfingkeys work for PDF files, Surfingkeys integrates the PDF viewer from the notable [pdf.js](https://github.com/mozilla/pdf.js). When a PDF file is opened in Chrome, the PDF viewer is launched, and you can use everything from Surfingkeys then.
 
-If you would like to use original pdf viewer provided by Chrome itself, use `;s` to toggle that.
+If you would like to use the original PDF viewer provided by Chrome itself, use `;s` to toggle that.
 
-Some functionalities are also available when you're using original pdf viewer, but some functionalities such as smooth scroll/visual mode etc won't be available.
+Some functionalities are also available when you're using the original PDF viewer, but some, such as smooth scroll/visual mode, etc., won't be available.
 
 ## Edit your own settings
 
@@ -597,7 +599,7 @@ Some functionalities are also available when you're using original pdf viewer, b
 | settings.tabIndicesSeparator | "\|" | The separator between index and original title of a tab. |
 | settings.disabledOnActiveElementPattern | undefined | Automatically disable this extension when the active element matches with this pattern and reactivate the extension when the active element changes, one useful case is to enable user to type to locate an option in a large dropdown, such as `settings.disabledOnActiveElementPattern = "ul.select-dropdown-options";` |
 
-### Example of settings.theme, below is to set font size of status bar
+### Example of `settings.theme`: below is to set the font size of the status bar
 
     settings.theme = `
         #sk_status, #sk_find {
@@ -606,7 +608,7 @@ Some functionalities are also available when you're using original pdf viewer, b
     }`;
 
 ## Chat with LLM
-There are several LLM providers integrated into Surfingkeys now, use `A` to call out a chat popup, and chat with your AI providers. The supported LLM providers now are
+There are several LLM providers integrated into Surfingkeys now. Use `A` to call out a chat popup and chat with your AI providers. In normal mode, `A` passes the current page text as the initial system prompt. The supported LLM providers are currently:
 
 * Ollama
 * Bedrock
@@ -614,7 +616,7 @@ There are several LLM providers integrated into Surfingkeys now, use `A` to call
 * Gemini
 * Custom LLM provider (e.g.: SiliconFlow and OpenRouter; other OpenAI API compatible services should also work)
 
-To use the feature, you need set up your credentials/API keys first, like
+To use the feature, you need to set up your credentials/API keys first, like this:
 
     settings.defaultLLMProvider = "bedrock";
     settings.llm = {
@@ -641,13 +643,17 @@ To use the feature, you need set up your credentials/API keys first, like
         }
     };
 
-You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start to chat with AI about the selected text.
+You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start chatting with AI about the selected text.
 
 Another solution to select the content to chat with AI about is Regional Hints mode. Press `L` to pick an element, then `l` to call out the LLM chat box.
 
-### To use LLM chat with specified system prompt
+### Correct grammar of the input with LLM
 
-For example, you can designate your AI to be a translator with below snippets
+In insert mode, press `Ctrl-g` to send the text of the current input to the LLM. The input text is then replaced with the corrected version.
+
+### To use LLM chat with a specified system prompt
+
+For example, you can designate your AI to be a translator with the snippet below
 
     api.mapkey('A', '#8Open llm chat', function() {
         api.Front.openOmnibar({type: "LLMChat", extra: {
@@ -657,7 +663,7 @@ For example, you can designate your AI to be a translator with below snippets
 
 ### 403 Forbidden with Ollama
 
-To use Ollama with Chrome extension, you need run ollama with some modification on `OLLAMA_ORIGINS`
+To use Ollama with the Chrome extension, you need to run ollama with a modification on `OLLAMA_ORIGINS`:
 
 Under Windows
 

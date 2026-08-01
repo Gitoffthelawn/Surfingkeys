@@ -1,5 +1,5 @@
 import Trie from './trie';
-import { runtime } from './runtime.js';
+import { RUNTIME, runtime } from './runtime.js';
 import Mode from './mode';
 import KeyboardUtils from './keyboardUtils';
 import {
@@ -171,6 +171,38 @@ function createInsert() {
         code: function() {
             getRealEdit().blur();
             self.exit();
+        }
+    });
+
+    self.mappings.add(KeyboardUtils.encodeKeystroke("<Ctrl-g>"), {
+        annotation: "Correct grammar of the input with LLM",
+        feature_group: 15,
+        code: function() {
+            const element = getRealEdit();
+            const text = element.value !== undefined ? element.value : element.innerText;
+            if (!text || !text.trim()) {
+                return;
+            }
+            const messages = [
+                {role: "system", content: "You are a grammar checker. Correct grammar errors in the given text and reply with only the corrected text, keeping the original wording and tone."},
+                {role: "user", content: text}
+            ];
+            let corrected = "";
+            if (runtime.bookMessage('llmResponse', (resp) => {
+                if (resp.chunk) {
+                    corrected += resp.chunk;
+                } else if (resp.done) {
+                    runtime.releaseMessage('llmResponse');
+                    corrected = corrected.trim();
+                    if (element.setSelectionRange !== undefined) {
+                        element.value = corrected;
+                    } else {
+                        element.innerText = corrected;
+                    }
+                }
+            })) {
+                RUNTIME("llmRequest", {messages, provider: runtime.conf.defaultLLMProvider});
+            }
         }
     });
 

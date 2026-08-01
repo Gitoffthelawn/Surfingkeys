@@ -495,7 +495,9 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         front.openOmnibar({type: "Commands"});
     });
     mapkey('A', '#8Open llm chat', function() {
-        front.openOmnibar({type: "LLMChat"});
+        front.openOmnibar({type: "LLMChat", extra: {
+            system: document.body.innerText
+        }});
     });
     vmapkey('A', '#8Open llm chat', function() {
         const sel = window.getSelection().toString();

@@ -34,7 +34,7 @@ function placeHintsHost(host) {
     topLayerElement.appendChild(host);
 }
 
-function createRegionalHints(clipboard) {
+function createRegionalHints(clipboard, createOverlay) {
     const self = new Mode("RegionalHints");
 
     self.mappings = new Trie();
@@ -116,19 +116,23 @@ kbd {
         }
     });
 
-    const menu = createElementWithContent('div', "", {class: "menu"});
-    getAnnotations(self.mappings).forEach((b) => {
-        const menuItem = createElementWithContent('div', "", {class: "menu-item"});
-        menuItem.appendChild(createElementWithContent('kbd', htmlEncode(KeyboardUtils.decodeKeystroke(b.word))));
-        menuItem.appendChild(createElementWithContent('span', b.annotation));
-        menu.appendChild(menuItem);
-    });
+    let overlay = null;
+
+    const buildMenu = () => {
+        const menu = createElementWithContent('div', "", {class: "menu"});
+        getAnnotations(self.mappings).forEach((b) => {
+            const menuItem = createElementWithContent('div', "", {class: "menu-item"});
+            menuItem.appendChild(createElementWithContent('kbd', htmlEncode(KeyboardUtils.decodeKeystroke(b.word))));
+            menuItem.appendChild(createElementWithContent('span', b.annotation));
+            menu.appendChild(menuItem);
+        });
+        return menu;
+    };
 
     self.addEventListener('keydown', function(event) {
         Mode.handleMapKey.call(self, event);
     });
 
-    let overlay = null;
     self.onExit = function() {
         overlay.remove();
         regionalHintsHost.remove();
@@ -136,9 +140,26 @@ kbd {
     self.attach = (elm) => {
         if (overlay) overlay.remove();
         overlay = elm;
+        if (overlay.link.parentElement) {
+            self.mappings.add("p", {
+                annotation: "select parent element",
+                feature_group: 17,
+                code: function() {
+                    const parent = overlay.link.parentElement;
+                    if (!parent) {
+                        return;
+                    }
+                    const newOverlay = createOverlay(parent, overlay.link.skColorIndex, "99");
+                    newOverlay.link = parent;
+                    self.attach(newOverlay);
+                }
+            });
+        } else {
+            self.mappings.remove("p");
+        }
         regionalHintsHost.shadowRoot.appendChild(overlay);
         placeHintsHost(regionalHintsHost);
-        overlay.appendChild(menu);
+        overlay.appendChild(buildMenu());
         self.enter();
     };
     self.onScrollStarted = () => {
@@ -149,8 +170,8 @@ kbd {
     };
     self.onScrollDone = () => {
         const be = overlay.link.getBoundingClientRect();
-        overlay.style.top = be.top + "px";
-        overlay.style.left = be.left + "px";
+        overlay.style.top = Math.max(0, Math.min(be.top, window.innerHeight - overlay.offsetHeight)) + "px";
+        overlay.style.left = Math.max(0, Math.min(be.left, window.innerWidth - overlay.offsetWidth)) + "px";
         overlay.style.display = "";
     };
     return self;
@@ -207,7 +228,7 @@ div.hint-scrollable {
     }
 
     hintsHost.shadowRoot.appendChild(hintsStyle);
-    const regionalHints = createRegionalHints(clipboard);
+    const regionalHints = createRegionalHints(clipboard, createOverlay);
 
     let numeric = false;
     /**
@@ -698,12 +719,14 @@ div.hint-scrollable {
         const be = e.getBoundingClientRect();
         const z = getZIndex(e);
 
+        const width = be.width - 4;
+        const height = be.height - 4;
         const frame = document.createElement('mask');
         frame.style.position = "fixed";
-        frame.style.top = be.top + "px";
-        frame.style.left = be.left + "px";
-        frame.style.width = be.width - 4 + "px";
-        frame.style.height = be.height - 4 + "px";
+        frame.style.top = Math.max(0, Math.min(be.top, window.innerHeight - height)) + "px";
+        frame.style.left = Math.max(0, Math.min(be.left, window.innerWidth - width)) + "px";
+        frame.style.width = width + "px";
+        frame.style.height = height + "px";
         frame.style.zIndex = z + 9999;
         frame.style.background = getColor(i) + alpha;
         frame.style.border = `2px solid ${getColor(i)}`;

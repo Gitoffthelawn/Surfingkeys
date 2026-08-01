@@ -189,9 +189,6 @@ function bedrock(req, opts) {
         body: JSON.stringify({
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 4096,
-            "top_k": 250,
-            "temperature": 1,
-            "top_p": 0.999,
             "tools": req.tools,
             "system": req.messages[0].content,
             "messages": transformMessages(req.messages.slice(1))

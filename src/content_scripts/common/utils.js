@@ -279,6 +279,29 @@ function showPopup(msg) {
     dispatchSKEvent("front", ['showPopup', msg])
 }
 
+/**
+ * Send a chat request to the configured LLM provider and stream the response.
+ *
+ * @param {object[]} messages the messages array, with the first one as the system prompt.
+ * @param {function} onChunk a callback on each response chunk.
+ * @param {function} [onDone] a callback when the response completes.
+ * @returns {boolean} whether the request was started, false if another request is in progress.
+ */
+function llmRequest(messages, onChunk, onDone) {
+    if (runtime.bookMessage('llmResponse', (resp) => {
+        if (resp.chunk) {
+            onChunk(resp.chunk);
+        } else if (resp.done) {
+            runtime.releaseMessage('llmResponse');
+            onDone && onDone(resp.message);
+        }
+    })) {
+        RUNTIME("llmRequest", {messages, provider: runtime.conf.defaultLLMProvider});
+        return true;
+    }
+    return false;
+}
+
 function openOmnibar(args) {
     dispatchSKEvent("front", ['openOmnibar', args])
 }
@@ -1173,6 +1196,7 @@ export {
     isElementPartiallyInViewport,
     isInUIFrame,
     listElements,
+    llmRequest,
     locateFocusNode,
     mapInMode,
     openOmnibar,

@@ -66,3 +66,18 @@ div.surfingkeys_cursor:empty {
     text-align: center;
     vertical-align: middle;
 }
+.surfingkeys_translation {
+    position: absolute;
+    z-index: 2147483647;
+    min-width: 400px;
+    padding: 8px 12px;
+    font-size: 14px;
+    line-height: 1.5;
+    color: #fff;
+    background: rgba(40, 40, 40, 0.96);
+    border: 1px solid #888;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    white-space: pre-wrap;
+    word-break: break-word;
+}

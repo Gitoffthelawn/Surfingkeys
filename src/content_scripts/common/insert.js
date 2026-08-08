@@ -1,11 +1,12 @@
 import Trie from './trie';
-import { RUNTIME, runtime } from './runtime.js';
+import { runtime } from './runtime.js';
 import Mode from './mode';
 import KeyboardUtils from './keyboardUtils';
 import {
     createElementWithContent,
     getRealEdit,
     isEditable,
+    llmRequest,
     locateFocusNode,
     scrollIntoViewIfNeeded,
     setSanitizedContent,
@@ -188,21 +189,16 @@ function createInsert() {
                 {role: "user", content: text}
             ];
             let corrected = "";
-            if (runtime.bookMessage('llmResponse', (resp) => {
-                if (resp.chunk) {
-                    corrected += resp.chunk;
-                } else if (resp.done) {
-                    runtime.releaseMessage('llmResponse');
-                    corrected = corrected.trim();
-                    if (element.setSelectionRange !== undefined) {
-                        element.value = corrected;
-                    } else {
-                        element.innerText = corrected;
-                    }
+            llmRequest(messages, (chunk) => {
+                corrected += chunk;
+            }, () => {
+                corrected = corrected.trim();
+                if (element.setSelectionRange !== undefined) {
+                    element.value = corrected;
+                } else {
+                    element.innerText = corrected;
                 }
-            })) {
-                RUNTIME("llmRequest", {messages, provider: runtime.conf.defaultLLMProvider});
-            }
+            });
         }
     });
 

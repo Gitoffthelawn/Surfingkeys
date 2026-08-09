@@ -612,9 +612,7 @@ There are several LLM providers integrated into Surfingkeys now. Use `A` to call
 
 * Ollama
 * Bedrock
-* DeepSeek
-* Gemini
-* Custom LLM provider (e.g.: SiliconFlow and OpenRouter; other OpenAI API compatible services should also work)
+* Custom LLM provider (e.g.: SiliconFlow, OpenRouter, DeepSeek and Gemini; other OpenAI API compatible services should also work)
 
 To use the feature, you need to set up your credentials/API keys first, like this:
 
@@ -626,20 +624,30 @@ To use the feature, you need to set up your credentials/API keys first, like thi
             // model: 'anthropic.claude-3-5-sonnet-20241022-v2:0',
             model: 'us.anthropic.claude-3-7-sonnet-20250219-v1:0',
         },
-        gemini: {
-            apiKey: '***************************************',
-        },
         ollama: {
             model: 'qwen2.5-coder:32b',
         },
-        deepseek: {
-            apiKey: '***********************************',
-            model: 'deepseek-chat',
-        },
         custom: {
-            serviceUrl: 'https://api.siliconflow.cn/v1/chat/completions',
-            apiKey: '***********************************',
-            model: 'deepseek-ai/DeepSeek-V3.1',
+            siliconflow: {
+                serviceUrl: 'https://api.siliconflow.cn/v1/chat/completions',
+                apiKey: '***********************************',
+                model: 'deepseek-ai/DeepSeek-V3.1',
+            },
+            openrouter: {
+                serviceUrl: 'https://openrouter.ai/api/v1/chat/completions',
+                apiKey: '***********************************',
+                model: 'meta-llama/llama-3.1-70b-instruct:free',
+            },
+            deepseek: {
+                serviceUrl: 'https://api.deepseek.com/chat/completions',
+                apiKey: '***********************************',
+                model: 'deepseek-chat',
+            },
+            gemini: {
+                serviceUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+                apiKey: '***********************************',
+                model: 'gemini-2.0-flash',
+            },
         }
     };
 

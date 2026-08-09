@@ -1353,16 +1353,6 @@ function start(browser) {
             if (llmConf.ollama && llmConf.ollama.model) {
                 llmClients.ollama.model = llmConf.ollama.model;
             }
-            if (llmConf.deepseek && llmConf.deepseek.apiKey) {
-                llmClients.deepseek.apiKey = llmConf.deepseek.apiKey;
-                llmClients.deepseek.model = llmConf.deepseek.model;
-                delete message.settings.llm.deepseek;
-            }
-            if (llmConf.gemini && llmConf.gemini.apiKey) {
-                llmClients.gemini.apiKey = llmConf.gemini.apiKey;
-                llmClients.gemini.model = llmConf.gemini.model;
-                delete message.settings.llm.gemini;
-            }
             if (llmConf.bedrock
                 && llmConf.bedrock.accessKeyId
                 && llmConf.bedrock.secretAccessKey
@@ -1370,10 +1360,18 @@ function start(browser) {
                 llmClients.bedrock.init(llmConf.bedrock);
                 delete message.settings.llm.bedrock;
             }
-            if (llmConf.custom && llmConf.custom.serviceUrl && llmConf.custom.apiKey && llmConf.custom.model) {
-                llmClients.custom.serviceUrl = llmConf.custom.serviceUrl;
-                llmClients.custom.apiKey = llmConf.custom.apiKey;
-                llmClients.custom.model = llmConf.custom.model;
+            if (llmConf.custom) {
+                const reservedNames = ['bedrock', 'ollama', 'custom'];
+                for (const name in llmConf.custom) {
+                    if (llmConf.custom.hasOwnProperty(name) && llmConf.custom[name].serviceUrl) {
+                        if (reservedNames.indexOf(name) !== -1) {
+                            console.warn(`[Surfingkeys] "${name}" is a built-in LLM provider, skipped as a custom provider.`);
+                            continue;
+                        }
+                        llmClients.custom.register(name, llmConf.custom[name]);
+                        llmClients[name] = llmClients.custom;
+                    }
+                }
                 delete message.settings.llm.custom;
             }
             return { error };
@@ -1990,7 +1988,7 @@ function start(browser) {
     };
     self.getAllLlmProviders = function (message, sender, sendResponse) {
         _response(message, sendResponse, {
-            providers: Object.keys(llmClients)
+            providers: Object.keys(llmClients).filter(p => p !== 'custom')
         });
     };
 

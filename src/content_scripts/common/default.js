@@ -325,7 +325,7 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         if (!text || selection.rangeCount === 0) {
             return;
         }
-        visual.exit();
+        visual.toggle();
         const rect = selection.getRangeAt(0).getBoundingClientRect();
         showTranslationOverlay(text, rect.width > 0 ? rect : null);
     };

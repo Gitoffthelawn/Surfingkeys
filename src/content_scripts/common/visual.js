@@ -53,7 +53,9 @@ function createVisual(clipboard, hints) {
                     self.visualClear();
                     self.exit();
                 }
-                state--;
+                if (state > 0) {
+                    state--;
+                }
                 _onStateChange();
                 event.sk_stopPropagation = true;
                 event.sk_suppressed = true;
@@ -77,16 +79,14 @@ function createVisual(clipboard, hints) {
                 state = 0;
                 break;
             case "Caret":
-                if (state) {
+                if (state === 0) {
                     self.hideCursor();
-                    if (state === 0) {
-                        state = 1;
-                    }
+                    state = 1;
                     self.showCursor();
                 }
                 break;
             case "Range":
-                if (state) {
+                if (state !== 2) {
                     self.hideCursor();
                     state = 2;
                     self.showCursor();

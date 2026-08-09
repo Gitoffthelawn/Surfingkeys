@@ -306,6 +306,11 @@ function ollama(req, opts) {
                     const chunk = decoder.decode(value).trim();
                     for (const c of chunk.split("\n")) {
                         const o = JSON.parse(c);
+                        if (o.error) {
+                            opts.onChunk(o.error);
+                            opts.onComplete({});
+                            continue;
+                        }
                         if (o.message.content) {
                             content += o.message.content;
                             opts.onChunk(o.message.content);
@@ -337,196 +342,45 @@ function ollama(req, opts) {
     }).catch(error => console.error('Error:', error));
 }
 
-function deepseek(req, opts) {
-    const decoder = new TextDecoder();
-    if (!deepseek.apiKey) {
-        opts.onChunk("Please set api key for DeepSeek correctly.");
-        opts.onComplete({});
-        return;
-    }
+const customClients = {};
 
-    function transformMessages(reqMsgs) {
-        return reqMsgs.map((m) => {
-            if (typeof(m.content) === "string") {
-                return m;
-            } else {
-                return {"role": m.role, "content": m.content[0].text};
-            }
-        });
-    }
-    fetch('https://api.deepseek.com/chat/completions', {
-        method: 'POST',
-        headers: {
-            "Authorization": `Bearer ${deepseek.apiKey}`,
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-            "model": deepseek.model || 'deepseek-chat',
-            "stream": true,
-            "messages": transformMessages(req.messages)
-        })
-    }).then(response => {
-        const reader = response.body.getReader();
-
-        let content_block = { type: "text", text: "" };
-        function readStream() {
-            reader.read().then(({done, value}) => {
-                if (done) {
-                    return;
-                }
-
-                // Convert the chunk to text
-                const chunk = decoder.decode(value);
-                try {
-                    const lines = chunk.trim().split("\n\n");
-                    const dataPat = /^data: /;
-                    for (const line of lines) {
-                        if (!dataPat.test(line)) {
-                            console.error('Unexpected line: ', line);
-                            continue;
-                        }
-                        const data = line.replace(dataPat, "");
-                        if (data === "[DONE]") {
-                            opts.onComplete({role: "assistant", content: [content_block]});
-                            return;
-                        }
-                        const o = JSON.parse(data);
-                        if (o.choices && o.choices[0].delta) {
-                            opts.onChunk(o.choices[0].delta.content);
-                            content_block.text += o.choices[0].delta.content;
-                        }
-                    }
-                } catch (e) {
-                    console.error('Error parsing chunk:', e, value);
-                }
-
-                // Continue reading
-                readStream();
-            });
-        }
-
-        readStream();
-    }).catch(error => console.error('Error:', error));
-}
-
-// https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference
-function gemini(req, opts) {
-    const decoder = new TextDecoder();
-    if (!gemini.apiKey) {
-        opts.onChunk("Please set api key for Gemini correctly.");
-        opts.onComplete({});
-        return;
-    }
-
-    let model = opts.model || "gemini-2.0-flash";
-    function buildParts(m) {
-        if (typeof(m.content) === "string") {
-            return {"role": m.role, "parts": [ {"text": m.content} ]}
-        } else {
-            return {"role": m.role, "parts": [ {"text": m.content[0].text} ]}
-        }
-    }
-    function transformMessages(reqMsgs) {
-        let req = {};
-        if (reqMsgs.length > 0 && reqMsgs[0].role === "system") {
-            const text = reqMsgs[0].content;
-            req.systemInstruction = { "parts": [ { text } ] };
-            req.contents = reqMsgs.slice(1).map(buildParts);
-        } else {
-            req.contents = reqMsgs.map(buildParts);
-        }
-        return req;
-    }
-
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?key=${gemini.apiKey}`, {
-        method: 'POST',
-        headers: {
-            "Content-Type": "application/json",
-        },
-        body: JSON.stringify(transformMessages(req.messages))
-    }).then(response => {
-        const reader = response.body.getReader();
-
-        let buffer = "";
-        let content_block = { type: "text", text: "" };
-        function readStream() {
-            reader.read().then(({done, value}) => {
-                if (done) {
-                    return;
-                }
-
-                // Convert the chunk to text
-                const chunk = decoder.decode(value);
-                try {
-                    buffer += chunk;
-                    if (buffer[0] !== "[") {
-                        return readStream();
-                    }
-                    if (buffer[buffer.length - 1] === "]") {
-                        const messages = JSON.parse(buffer);
-                        for (const o of messages) {
-                            if (o.error && o.error.message) {
-                                opts.onChunk(o.error.message);
-                                opts.onComplete({});
-                                return;
-                            }
-                            if (o.candidates) {
-                                if (o.candidates[0].content) {
-                                    opts.onChunk(o.candidates[0].content.parts[0].text);
-                                    content_block.text += o.candidates[0].content.parts[0].text;
-                                }
-                                if (o.candidates[0].finishReason && o.candidates[0].finishReason === "STOP") {
-                                    opts.onComplete({role: "assistant", content: [content_block]});
-                                }
-                            }
-                        }
-                        buffer = "";
-                    }
-                } catch (e) {
-                    console.error('Error parsing chunk:', e, value);
-                }
-
-                // Continue reading
-                readStream();
-            });
-        }
-
-        readStream();
-    }).catch(error => console.error('Error:', error));
-}
-
-function custom(req, opts) {
+function openAICompatible(req, opts, client) {
     const decoder = new TextDecoder();
     const abortCtrl = new AbortController();
 
-    if (!custom.serviceUrl) {
+    if (!client) {
+        opts.onChunk('Please set up the provider correctly.');
+        opts.onComplete({});
+        return () => abortCtrl.abort();
+    }
+    if (!client.serviceUrl) {
         opts.onChunk('Please set service URL correctly.');
         opts.onComplete({});
-        return;
+        return () => abortCtrl.abort();
     }
-    if (!custom.apiKey) {
-        opts.onChunk('Please set API key correctly.');
+    if (!client.apiKey) {
+        opts.onChunk(`Please set api key for ${client.name || 'the provider'} correctly.`);
         opts.onComplete({});
-        return;
+        return () => abortCtrl.abort();
     }
-    if (!custom.model) {
+    if (!client.model) {
         opts.onChunk('Please set model correctly.');
         opts.onComplete({});
-        return;
+        return () => abortCtrl.abort();
     }
 
     const transformMessages = msgs => msgs.map(m =>
         typeof m.content === 'string' ? m : { role: m.role, content: m.content[0].text }
     );
 
-    fetch(custom.serviceUrl, {
+    fetch(client.serviceUrl, {
         method: 'POST',
         headers: {
-            Authorization: `Bearer ${custom.apiKey}`,
+            Authorization: `Bearer ${client.apiKey}`,
             'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-            model: custom.model,
+            model: client.model,
             stream: true,
             messages: transformMessages(req.messages),
         }),
@@ -535,6 +389,40 @@ function custom(req, opts) {
         .then(resp => {
             const reader = resp.body.getReader();
             let contentBlock = { type: 'text', text: '' };
+            let fullContent = '';
+            let emittedLen = 0;
+            let afterThink = false;
+
+            const addContent = (txt) => {
+                fullContent += txt;
+                let clean = fullContent;
+                while (true) {
+                    const start = clean.indexOf('<think>');
+                    if (start === -1) break;
+                    const end = clean.indexOf('</think>', start);
+                    if (end === -1) break;
+                    clean = clean.slice(0, start) + clean.slice(end + 7);
+                    afterThink = true;
+                }
+                const lastStart = clean.lastIndexOf('<think>');
+                if (lastStart !== -1) {
+                    clean = clean.slice(0, lastStart);
+                }
+                if (clean.length > emittedLen) {
+                    let emitText = clean.slice(emittedLen);
+                    emittedLen = clean.length;
+                    if (afterThink) {
+                        const stripped = emitText.replace(/^\s+/, '');
+                        if (stripped.length === 0) {
+                            return;
+                        }
+                        emitText = stripped;
+                        afterThink = false;
+                    }
+                    opts.onChunk(emitText);
+                    contentBlock.text += emitText;
+                }
+            };
 
             const readStream = () => {
                 reader.read()
@@ -557,9 +445,7 @@ function custom(req, opts) {
                                 }
                                 const o = JSON.parse(data);
                                 if (o.choices?.[0]?.delta?.content) {
-                                    const txt = o.choices[0].delta.content;
-                                    opts.onChunk(txt);
-                                    contentBlock.text += txt;
+                                    addContent(o.choices[0].delta.content);
                                 }
                             }
                         } catch (e) {
@@ -586,10 +472,16 @@ function custom(req, opts) {
     return () => abortCtrl.abort();
 }
 
+function custom(req, opts) {
+    return openAICompatible(req, opts, customClients[req.provider]);
+}
+
+custom.register = function(name, client) {
+    customClients[name] = client;
+};
+
 export default {
     bedrock,
-    deepseek,
-    gemini,
     ollama,
     custom,
 }

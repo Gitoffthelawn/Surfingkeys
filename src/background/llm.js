@@ -267,7 +267,10 @@ function bedrock(req, opts) {
                 opts.onComplete({});
             });
         }
-    }).catch(error => console.error('Error:', error));
+    }).catch(error => {
+        opts.onChunk(`Error: ${error.message}`);
+        opts.onComplete({});
+    });
 }
 
 bedrock.init = function(opts) {
@@ -339,7 +342,10 @@ function ollama(req, opts) {
         } else {
             readStream();
         }
-    }).catch(error => console.error('Error:', error));
+    }).catch(error => {
+        opts.onChunk(`Error: ${error.message}`);
+        opts.onComplete({});
+    });
 }
 
 const customClients = {};
@@ -457,6 +463,8 @@ function openAICompatible(req, opts, client) {
                     .catch(err => {
                         if (err.name !== 'AbortError') {
                             console.error('Stream error:', err);
+                            opts.onChunk(`Error: ${err.message}`);
+                            opts.onComplete({});
                         }
                     });
             };
@@ -466,6 +474,8 @@ function openAICompatible(req, opts, client) {
         .catch(err => {
             if (err.name !== 'AbortError') {
                 console.error('Fetch error:', err);
+                opts.onChunk(`Error: ${err.message}`);
+                opts.onComplete({});
             }
         });
 

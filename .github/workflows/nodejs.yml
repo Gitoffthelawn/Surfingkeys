@@ -13,12 +13,12 @@ jobs:
 
     strategy:
       matrix:
-        node-version: [12.x, 14.x]
+        node-version: [22.x, 24.x]
 
     steps:
-    - uses: actions/checkout@v1
+    - uses: actions/checkout@v4
     - name: Use Node.js ${{ matrix.node-version }}
-      uses: actions/setup-node@v1
+      uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
     - name: npm install and build
@@ -27,3 +27,5 @@ jobs:
         npm run build
       env:
         CI: true
+    - name: security audit (shipped dependencies)
+      run: npm audit --omit=dev --audit-level=high

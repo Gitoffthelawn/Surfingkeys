@@ -82,6 +82,58 @@ function _save(storage, data, cb) {
     }
 }
 
+function _registerLlmProviders(llmConf) {
+    if (!llmConf) {
+        return;
+    }
+    if (llmConf.ollama && llmConf.ollama.model) {
+        llmClients.ollama.model = llmConf.ollama.model;
+    }
+    if (llmConf.bedrock
+        && llmConf.bedrock.accessKeyId
+        && llmConf.bedrock.secretAccessKey
+        && llmConf.bedrock.model) {
+        llmClients.bedrock.init(llmConf.bedrock);
+    }
+    if (llmConf.custom) {
+        const reservedNames = ['bedrock', 'ollama', 'custom'];
+        for (const name in llmConf.custom) {
+            if (llmConf.custom.hasOwnProperty(name) && llmConf.custom[name].serviceUrl) {
+                if (reservedNames.indexOf(name) !== -1) {
+                    console.warn(`[Surfingkeys] "${name}" is a built-in LLM provider, skipped as a custom provider.`);
+                    continue;
+                }
+                llmClients.custom.register(name, llmConf.custom[name]);
+                llmClients[name] = llmClients.custom;
+            }
+        }
+    }
+}
+
+function _persistLlmProviderConfig(llmConf) {
+    const persistable = { custom: llmConf.custom || {} };
+    if (llmConf.ollama && llmConf.ollama.model) {
+        persistable.ollama = { model: llmConf.ollama.model };
+    }
+    if (llmConf.bedrock
+        && llmConf.bedrock.accessKeyId
+        && llmConf.bedrock.secretAccessKey
+        && llmConf.bedrock.model) {
+        // credentials live in the user's snippets (also stored in chrome.storage),
+        // so persist them too; the bedrock client cannot be re-initialised after a
+        // background restart without them.
+        persistable.bedrock = llmConf.bedrock;
+    }
+    // an empty or missing llm config means the snippets carried no providers,
+    // so leave whatever was stored alone.
+    if (llmConf.custom === undefined
+        && !(llmConf.ollama && llmConf.ollama.model)
+        && !persistable.bedrock) {
+        return;
+    }
+    chrome.storage.local.set({ _llmProviderConfig: persistable });
+}
+
 function start(browser) {
     var self = {};
 
@@ -95,7 +147,8 @@ function start(browser) {
     // data by tab id
     var tabActivated = {},
         tabMessages = {},
-        tabURLs = {};
+        tabURLs = {},
+        tabIconStatus = {};
 
     var newTabUrl = browser._setNewTabUrl();
 
@@ -174,12 +227,22 @@ function start(browser) {
         }, tmpSet);
     }
 
-    loadSettings(null, browser._applyProxySettings);
+    loadSettings(null, function(data) {
+        browser._applyProxySettings(data);
+        // Custom LLM providers are registered from snippets at page load, so
+        // they live only in this process's memory. Re-register them after a
+        // background restart so llmRequest keeps working until the next page
+        // reload re-runs the snippets.
+        chrome.storage.local.get({ _llmProviderConfig: {} }, function(stored) {
+            _registerLlmProviders(stored._llmProviderConfig);
+        });
+    });
 
     function removeTab(tabId) {
         delete tabActivated[tabId];
         delete tabMessages[tabId];
         delete tabURLs[tabId];
+        delete tabIconStatus[tabId];
         tabHistory = tabHistory.filter(function(e) {
             return e !== tabId;
         });
@@ -1235,28 +1298,15 @@ function start(browser) {
                 }
             }
             const llmConf = conf.llm;
-            if (llmConf.ollama && llmConf.ollama.model) {
-                llmClients.ollama.model = llmConf.ollama.model;
-            }
+            _registerLlmProviders(llmConf);
+            _persistLlmProviderConfig(llmConf);
             if (llmConf.bedrock
                 && llmConf.bedrock.accessKeyId
                 && llmConf.bedrock.secretAccessKey
                 && llmConf.bedrock.model) {
-                llmClients.bedrock.init(llmConf.bedrock);
                 delete message.settings.llm.bedrock;
             }
             if (llmConf.custom) {
-                const reservedNames = ['bedrock', 'ollama', 'custom'];
-                for (const name in llmConf.custom) {
-                    if (llmConf.custom.hasOwnProperty(name) && llmConf.custom[name].serviceUrl) {
-                        if (reservedNames.indexOf(name) !== -1) {
-                            console.warn(`[Surfingkeys] "${name}" is a built-in LLM provider, skipped as a custom provider.`);
-                            continue;
-                        }
-                        llmClients.custom.register(name, llmConf.custom[name]);
-                        llmClients[name] = llmClients.custom;
-                    }
-                }
                 delete message.settings.llm.custom;
             }
             return { error };
@@ -1313,6 +1363,12 @@ function start(browser) {
         }
     };
     self.setSurfingkeysIcon = function(message, sender, sendResponse) {
+        const tabId = sender.tab ? sender.tab.id : undefined;
+        // Only touch the icon API when the per-tab state actually changed;
+        // every page load reports the state again, most often the same one.
+        if (tabId !== undefined && tabIconStatus[tabId] === message.status) {
+            return;
+        }
         let icon = "icons/48.png";
         if (message.status === "disabled") {
             icon = "icons/48-x.png";
@@ -1322,8 +1378,11 @@ function start(browser) {
         const browserAction = isMV3 ? chrome.action : chrome.browserAction;
         browserAction.setIcon({
             path: icon,
-            tabId: (sender.tab ? sender.tab.id : undefined)
+            tabId: tabId
         });
+        if (tabId !== undefined) {
+            tabIconStatus[tabId] = message.status;
+        }
     };
     self.request = function(message, sender, sendResponse) {
         request(message.url, function(res) {
@@ -1850,7 +1909,8 @@ function start(browser) {
         } else {
             sendLLMessage({
                 subject: 'llmResponse',
-                chunk: `**Warning:** There is no LLM provider ${provider} implemented.`
+                chunk: `**Warning:** There is no LLM provider ${provider} implemented.`,
+                done: true
             });
         }
     };

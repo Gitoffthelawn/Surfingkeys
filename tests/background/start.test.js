@@ -1795,6 +1795,27 @@ describe('start', () => {
                 {path: 'icons/48.png', tabId: 12});
             expect(chrome.action.setIcon).not.toHaveBeenCalled();
         });
+
+        it('skips the icon API when the tab state is unchanged', () => {
+            const {chrome, dispatch} = bootstrap();
+            dispatch({action: 'setSurfingkeysIcon', status: 'enabled'}, senderFor(12));
+            expect(chrome.action.setIcon).toHaveBeenCalledTimes(1);
+            // repeated reports of the same state (e.g. every page load) are no-ops
+            dispatch({action: 'setSurfingkeysIcon', status: 'enabled'}, senderFor(12));
+            expect(chrome.action.setIcon).toHaveBeenCalledTimes(1);
+            // a real state change still updates the icon
+            dispatch({action: 'setSurfingkeysIcon', status: 'disabled'}, senderFor(12));
+            expect(chrome.action.setIcon).toHaveBeenCalledTimes(2);
+            expect(chrome.action.setIcon).toHaveBeenLastCalledWith({path: 'icons/48-x.png', tabId: 12});
+        });
+
+        it('tracks icons per tab', () => {
+            const {chrome, dispatch} = bootstrap();
+            dispatch({action: 'setSurfingkeysIcon', status: 'enabled'}, senderFor(12));
+            dispatch({action: 'setSurfingkeysIcon', status: 'lurking'}, senderFor(11));
+            dispatch({action: 'setSurfingkeysIcon', status: 'enabled'}, senderFor(12));
+            expect(chrome.action.setIcon).toHaveBeenCalledTimes(2);
+        });
     });
 
     describe('boot-time snippet loading', () => {
@@ -2110,6 +2131,73 @@ describe('start', () => {
             // credentials are consumed rather than echoed back
             expect(settings.llm.bedrock).toBeUndefined();
             init.mockRestore();
+        });
+
+        it('persists custom provider config for recovery after a restart', () => {
+            const {chrome, dispatch} = bootstrap();
+            try {
+                dispatch({
+                    action: 'updateSettings',
+                    scope: 'snippets',
+                    settings: {llm: {custom: {
+                        claude: {serviceUrl: 'https://api.example', apiKey: 'k', model: 'claude-x'},
+                    }}},
+                }, senderFor(12));
+                expect(chrome.storage.local.data._llmProviderConfig).toEqual({
+                    custom: {claude: {serviceUrl: 'https://api.example', apiKey: 'k', model: 'claude-x'}},
+                });
+            } finally {
+                delete llmClients.claude;
+            }
+        });
+
+        it('persists bedrock config so the client can be re-initialised after a restart', () => {
+            const init = jest.spyOn(llmClients.bedrock, 'init').mockImplementation(() => {});
+            const {chrome, dispatch} = bootstrap();
+            try {
+                const settings = {llm: {bedrock: {
+                    accessKeyId: 'AKIA', secretAccessKey: 'secret', model: 'claude',
+                }}};
+                dispatch({action: 'updateSettings', scope: 'snippets', settings}, senderFor(12));
+                expect(chrome.storage.local.data._llmProviderConfig.bedrock).toEqual({
+                    accessKeyId: 'AKIA', secretAccessKey: 'secret', model: 'claude',
+                });
+                // credentials are still consumed rather than echoed back to the page
+                expect(settings.llm.bedrock).toBeUndefined();
+            } finally {
+                init.mockRestore();
+            }
+        });
+
+        it('re-initialises the bedrock client from persisted config on boot', () => {
+            const init = jest.spyOn(llmClients.bedrock, 'init').mockImplementation(() => {});
+            try {
+                bootstrap({
+                    chrome: {storage: {local: {_llmProviderConfig: {
+                        bedrock: {accessKeyId: 'AKIA', secretAccessKey: 'secret', model: 'claude'},
+                    }}}},
+                });
+                expect(init).toHaveBeenCalledWith({
+                    accessKeyId: 'AKIA', secretAccessKey: 'secret', model: 'claude',
+                });
+            } finally {
+                init.mockRestore();
+            }
+        });
+
+        it('re-registers custom providers from persisted config on boot', () => {
+            const {dispatch} = bootstrap({
+                chrome: {storage: {local: {_llmProviderConfig: {custom: {
+                    claude: {serviceUrl: 'https://api.example', apiKey: 'k', model: 'claude-x'},
+                }}}}},
+            });
+            try {
+                expect(llmClients.claude).toBe(llmClients.custom);
+                const {sendResponse} = dispatch({action: 'getAllLlmProviders', needResponse: true}, senderFor(12));
+                expect(sendResponse.mock.calls[0][0].providers).toContain('claude');
+            } finally {
+                delete llmClients.claude;
+            }
         });
 
         it('streams chunks and the final message back to the requesting frame', () => {

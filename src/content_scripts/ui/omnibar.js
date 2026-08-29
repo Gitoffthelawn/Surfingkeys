@@ -330,6 +330,10 @@ function createOmnibar(front, clipboard) {
     self.promptSpan = ui.querySelector('#sk_omnibarSearchArea>span.prompt');
     var resultPageSpan = ui.querySelector('#sk_omnibarSearchArea>span.resultPage');
     self.resultsDiv = ui.querySelector('#sk_omnibarSearchResult');
+    // The frontend sets this display before invoking onHide/onShow, so it is the
+    // authoritative answer to "is the omnibar on screen", which a handler needs
+    // when it wants to know whether there is a user to interact with.
+    self.isVisible = () => ui.style.display !== "none";
 
     function _onIput() {
         if (lastInput !== self.input.value) {

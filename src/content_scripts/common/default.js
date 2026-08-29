@@ -593,14 +593,16 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         front.openOmnibar({type: "Commands"});
     });
     mapkey('A', '#8Open llm chat', function() {
-        front.openOmnibar({type: "LLMChat", extra: {
-            system: document.body.innerText
-        }});
+        // the page is not sent along: the model asks for it with `read_page` when a
+        // question actually needs it, so a chat that never needs it never pays for it
+        front.openOmnibar({type: "LLMChat"});
     });
     vmapkey('A', '#8Open llm chat', function() {
         const sel = window.getSelection().toString();
         front.openOmnibar({type: "LLMChat", extra: {
-            system: sel
+            // what the user pointed at, so `read_page` serves this instead of the
+            // whole page; it cannot be read later, the omnibar takes the selection
+            picked: sel
         }});
     });
     mapkey('yi', '#7Yank text of an input', function() {

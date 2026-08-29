@@ -56,6 +56,11 @@ const runtime = (function() {
             defaultLLMProvider: "ollama",
             defaultSearchEngine: "g",
             defaultVoice: "Daniel",
+            // `read_page` only ever reads the page the user opened the chat on and
+            // takes no destination, so it has nowhere to send anything and asking
+            // about it would be friction on the common case. Every other tool
+            // reaches beyond that page, so it is confirmed until listed here.
+            llmAllowedTools: ["read_page"],
             llmTranslateTarget: "auto",
             editableBodyCare: true,
             enableAutoFocus: true,

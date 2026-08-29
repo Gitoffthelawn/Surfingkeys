@@ -608,7 +608,7 @@ Some functionalities are also available when you're using the original PDF viewe
     }`;
 
 ## Chat with LLM
-There are several LLM providers integrated into Surfingkeys now. Use `A` to call out a chat popup and chat with your AI providers. In normal mode, `A` passes the current page text as the initial system prompt. The supported LLM providers are currently:
+There are several LLM providers integrated into Surfingkeys now. Use `A` to call out a chat popup and chat with your AI providers. The page you are on is not sent along with your question: the model reads it with the `read_page` tool when a question actually needs it, so a chat that never asks about the page never sends it anywhere. The supported LLM providers are currently:
 
 * Ollama
 * Bedrock
@@ -651,13 +651,53 @@ To use the feature, you need to set up your credentials/API keys first, like thi
         }
     };
 
-You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start chatting with AI about the selected text.
+You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start chatting with AI about the selected text — `read_page` then returns only that selection, not the whole page.
+
+A conversation is kept per site, so returning to any page of that site — or reloading — resumes where you left off. `/clear` starts a fresh one. A conversation you resume under a different provider than the one it was held with keeps its questions and answers, but not the tool results, which only the original provider can be given back.
 
 Another solution to select the content to chat with AI about is Regional Hints mode. Press `L` to pick an element, then `l` to call out the LLM chat box.
 
 ### Correct grammar of the input with LLM
 
 In insert mode, press `Ctrl-g` to send the text of the current input to the LLM. The input text is then replaced with the corrected version.
+
+### Browser tools available to the LLM
+
+While chatting, the LLM can look things up in your browser instead of guessing. It decides on its own when a tool is needed, and the chat shows which tool is running. All of them are read-only — nothing is navigated, clicked or written:
+
+| Tool | What the LLM can do with it |
+| --- | --- |
+| `read_page` | read the page you are looking at, or just the part you picked |
+| `search_browsing_history` | find a page you visited before, or answer questions about what you have been reading |
+| `search_bookmarks` | search the pages you deliberately saved |
+| `list_tabs` | see the tabs you have open right now |
+| `fetch_url` | read another page, to follow a link or check a fact the current page only references |
+
+So you can ask things like *"summarize this"*, *"which of my open tabs covers authentication?"*, *"find the Rust article I read last week and summarize it"*, or *"open the first link on this page and compare it with what I'm reading"*.
+
+Tool use works with every provider. The declarations are sent in the shape each one speaks: the Anthropic shape to Bedrock, and the OpenAI function-calling shape to the custom providers and to Ollama, whose own `/api/chat` accepts that same shape. Note that a small local model may ignore the tools or call them with poor arguments — this works best with a capable model, and a service whose model has no function calling at all will answer with an error.
+
+A single question is allowed five tool rounds. On the fifth the model is asked to answer with what it has gathered instead of calling anything else.
+
+#### Every tool call asks first
+
+A tool call is not necessarily something you asked for. Whatever `read_page` and `fetch_url` return was written by whoever wrote that page, so the conversation contains text nobody in your browser wrote, and it may well be addressed to the model — and `fetch_url` takes a URL, which is also a way to send data out. So each call is confirmed before it runs, showing the tool, what it will do, and the arguments verbatim:
+
+    🔐 search_browsing_history wants to read your browsing history and send the matches to the LLM provider.
+       query: rust async
+       y allow once · a allow for this chat · n deny
+
+`y` allows that one call, `a` stops asking for that tool for the rest of the conversation, `n` denies it — a denial is reported back to the model, which then answers with what it already has. Any other unmodified key is ignored while the prompt is up, so a stray Enter cannot submit past it, but `Ctrl`/`Cmd` shortcuts still work if you want to copy a URL out before deciding. The three choices are also clickable, since the chat input does not always have the keyboard. Read the arguments before approving — they are shown one per line, exactly as the model sent them, and a request to fetch an address on your own network is called out explicitly.
+
+The prompt arrives whenever the model decides it needs a tool, which may be in the middle of a sentence you are typing, so `y`/`a`/`n` do not count for a moment after it appears — a keystroke meant for the input cannot approve a call or grant a standing permission. `Esc` denies immediately, and is the key to reach for if a prompt takes you by surprise.
+
+Page text arrives as a tool result, fenced and labelled as untrusted, and the model is told to report on it rather than obey it.
+
+To stop being asked for tools you trust, list them:
+
+    settings.llmAllowedTools = ["read_page", "list_tabs", "fetch_url"];
+
+Anything not listed is still confirmed. The default is `["read_page"]`: reading the page you opened the chat on is the point of opening it there, and that tool takes no destination, so it has nowhere to send anything. Set it to `[]` to be asked about that too.
 
 ### To use LLM chat with a specified system prompt
 
@@ -668,6 +708,8 @@ For example, you can designate your AI to be a translator with the snippet below
             system: "You're a translator, whenever you got a message in Chinese, please just translate it into English, and if you got a message in English, please translate it to Chinese. You don't need to answer any question, just TRANSLATE."
         }});
     });
+
+`extra.system` replaces the built-in instructions entirely, including the ones about the page being untrusted data, so say what you need if the chat is still meant to read pages.
 
 ### 403 Forbidden with Ollama
 

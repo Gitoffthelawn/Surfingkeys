@@ -1907,9 +1907,20 @@ function start(browser) {
                 },
             });
         } else {
+            /*
+             * The same two messages a provider sends, never one carrying both: every
+             * caller reads `chunk` and `done` as alternatives, so a message with both
+             * is delivered as a chunk and its completion is never seen -- which
+             * leaves the caller's `llmResponse` booking held forever and silently
+             * disables every LLM feature in that frame until a reload.
+             */
             sendLLMessage({
                 subject: 'llmResponse',
-                chunk: `**Warning:** There is no LLM provider ${provider} implemented.`,
+                chunk: `**Warning:** There is no LLM provider ${provider} implemented.`
+            });
+            sendLLMessage({
+                subject: 'llmResponse',
+                message: {},
                 done: true
             });
         }

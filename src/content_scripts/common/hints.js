@@ -110,8 +110,9 @@ kbd {
         annotation: "learn more about target element",
         feature_group: 17,
         code: function() {
-            const system = overlay.link.innerText;
-            openOmnibar({type: "LLMChat", extra: {system}});
+            // the element the user picked, which `read_page` serves in place of the
+            // whole page
+            openOmnibar({type: "LLMChat", extra: {picked: overlay.link.innerText}});
             self.exit();
         }
     });

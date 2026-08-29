@@ -158,9 +158,28 @@ class EventStreamParser {
 
 let awsClient = null;
 function bedrock(req, opts) {
+    /*
+     * Exactly one completion, whatever route the request ends by -- including the
+     * ones that never reach the stream, an error body and a rejected fetch: the
+     * caller books the shared `llmResponse` handler for the request, and a request
+     * that never completes holds that booking forever, which silently disables
+     * every LLM feature in the frame until a reload.
+     */
+    let completed = false;
+    function complete(m) {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        opts.onComplete(m);
+    }
+    function fail(msg) {
+        opts.onChunk(msg);
+        complete({});
+    }
+
     if (!awsClient) {
-        opts.onChunk("Please set up bedrock correctly.");
-        opts.onComplete({});
+        fail("Please set up bedrock correctly.");
         return;
     }
 
@@ -190,6 +209,15 @@ function bedrock(req, opts) {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": 4096,
             "tools": req.tools,
+            // `{type: "none"}` makes the model answer with what it has instead of
+            // calling another tool. The declarations have to stay in the request
+            // either way: the conversation carries tool_use/tool_result blocks by
+            // then, and those are rejected when `tools` is absent.
+            //
+            // `none` is a recent addition to the anthropic API, so a model that
+            // predates it answers the last round of a tool loop with an error
+            // instead. It is only ever sent once the tool budget is spent.
+            "tool_choice": req.tool_choice,
             "system": req.messages[0].content,
             "messages": transformMessages(req.messages.slice(1))
         })
@@ -198,78 +226,112 @@ function bedrock(req, opts) {
 
         let content_block = {};
         let message = {};
+
+        /*
+         * A tool call with no arguments is streamed as a tool_use block with NO
+         * input_json_delta events at all, so the accumulator is still "" here --
+         * JSON.parse("") would throw "Unexpected end of JSON input" and, being
+         * inside the reader promise, take the whole stream down with it.
+         */
+        function parseToolInput(raw) {
+            if (!raw || !raw.trim()) {
+                return {};
+            }
+            try {
+                return JSON.parse(raw);
+            } catch (e) {
+                // truncated, e.g. the response hit max_tokens mid-arguments
+                opts.onChunk(`\n\n**Warning:** ${content_block.name} was called with incomplete arguments.\n\n`);
+                return {};
+            }
+        }
+
+        function handleEvent(e) {
+            switch (e.type) {
+                case "message_start":
+                    message = { "role": e.message.role, "content": [] };
+                    break;
+                case "content_block_start":
+                    // Keep every block type, not just text and tool_use: leaving a
+                    // stale block here would make content_block_stop push the
+                    // previous one a second time, and re-parse an input it already
+                    // consumed.
+                    content_block = e.content_block || {};
+                    if (content_block.type === "text") {
+                        opts.onChunk(content_block.text);
+                    } else if (content_block.type === "tool_use") {
+                        content_block.input_json = "";
+                    }
+                    break;
+                case "content_block_delta":
+                    switch (e.delta.type) {
+                        case "text_delta":
+                            opts.onChunk(e.delta.text);
+                            content_block.text = (content_block.text || "") + e.delta.text;
+                            break;
+                        case "input_json_delta":
+                            content_block.input_json = (content_block.input_json || "") + e.delta.partial_json;
+                            break;
+                    }
+                    break;
+                case "content_block_stop":
+                    if (content_block.type === "tool_use") {
+                        content_block.input = parseToolInput(content_block.input_json);
+                        delete content_block.input_json;
+                    }
+                    if (message.content) {
+                        message.content.push(content_block);
+                    }
+                    content_block = {};
+                    break;
+                case "message_stop":
+                    complete(message);
+                    break;
+            }
+        }
+
         function readStream() {
             reader.read().then(({done, value}) => {
                 if (done) {
+                    // the stream ended without message_stop, e.g. the connection
+                    // dropped: the caller still has to be released
+                    if (!completed) {
+                        fail("\n\n**Warning:** the response ended unexpectedly.");
+                    }
                     return;
                 }
 
-                // Convert the chunk to text
-                const messages = parser.parse(value);
-                for (var m of messages) {
+                for (var m of parser.parse(value)) {
                     if (m.headers[":message-type"] === "exception") {
-                        opts.onChunk(m.payload.message);
-                        opts.onComplete({});
-                    } else {
-                        let e = JSON.parse(atob(m.payload.bytes));
-                        switch (e.type) {
-                            case "message_start":
-                                message = { "role": e.message.role, "content": [] };
-                                break;
-                            case "content_block_start":
-                                switch (e.content_block.type) {
-                                    case "text":
-                                        content_block = e.content_block;
-                                        opts.onChunk(content_block.text);
-                                        break;
-                                    case "tool_use":
-                                        content_block = e.content_block;
-                                        content_block.input_json = "";
-                                        break;
-                                }
-                                break;
-                            case "content_block_delta":
-                                switch (e.delta.type) {
-                                    case "text_delta":
-                                        opts.onChunk(e.delta.text);
-                                        content_block.text += e.delta.text;
-                                        break;
-                                    case "input_json_delta":
-                                        content_block.input_json += e.delta.partial_json
-                                        break;
-                                }
-                                break;
-                            case "content_block_stop":
-                                if (content_block.type === "tool_use") {
-                                    content_block.input = JSON.parse(content_block.input_json);
-                                    delete content_block.input_json;
-                                }
-                                message.content.push(content_block);
-                                break;
-                            case "message_stop":
-                                opts.onComplete(message);
-                                break;
-                        }
+                        fail(m.payload.message);
+                        return;
                     }
+                    handleEvent(JSON.parse(atob(m.payload.bytes)));
                 }
 
+                if (completed) {
+                    return;
+                }
                 // Continue reading
                 readStream();
+            }).catch(error => {
+                // a malformed event would otherwise reject unobserved: this chain
+                // is not returned to the outer promise, so its .catch never sees it
+                fail(`Error: ${error.message}`);
             });
         }
 
         if (response.status == 200) {
             readStream();
         } else {
+            // an error body is not an event stream, so it is read as text -- and a
+            // read that rejects still has to release the caller
             reader.read().then(({done, value}) => {
-                const err = new TextDecoder().decode(value);
-                opts.onChunk(err);
-                opts.onComplete({});
-            });
+                fail(value ? new TextDecoder().decode(value) : `Error ${response.status}: no response body`);
+            }).catch(error => fail(`Error ${response.status}: ${error.message}`));
         }
     }).catch(error => {
-        opts.onChunk(`Error: ${error.message}`);
-        opts.onComplete({});
+        fail(`Error: ${error.message}`);
     });
 }
 
@@ -286,11 +348,34 @@ bedrock.init = function(opts) {
 function ollama(req, opts) {
     const decoder = new TextDecoder();
 
+    // Exactly one completion, whatever route the stream ends by: the caller books
+    // the shared `llmResponse` handler for the request, and a stream that never
+    // completes holds that booking forever, which silently disables every LLM
+    // feature in the frame until a reload.
+    let completed = false;
+    const complete = (message) => {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        opts.onComplete(message);
+    };
+    const fail = (msg) => {
+        opts.onChunk(msg);
+        complete({});
+    };
+
     fetch('http://localhost:11434/api/chat', {
         method: 'POST',
         body: JSON.stringify({
             "model": ollama.model || 'qwen2.5-coder:32b',
             "tools": req.tools,
+            // "answer with what you have, call nothing else", sent once the tool
+            // budget is spent. Ollama's own /api/chat does not document
+            // `tool_choice` -- it is forwarded in case the server honours it, and
+            // ignored otherwise, which is why the frontend enforces the budget on
+            // its own rather than relying on this.
+            "tool_choice": req.tool_choice,
             "messages": req.messages
         })
     }).then(response => {
@@ -301,6 +386,11 @@ function ollama(req, opts) {
         function readStream() {
             reader.read().then(({done, value}) => {
                 if (done) {
+                    // the stream ended without a `done` line, e.g. ollama was shut
+                    // down mid-answer: the caller still has to be released
+                    if (!completed) {
+                        fail("\n\n**Warning:** the response ended unexpectedly.");
+                    }
                     return;
                 }
 
@@ -310,21 +400,24 @@ function ollama(req, opts) {
                     for (const c of chunk.split("\n")) {
                         const o = JSON.parse(c);
                         if (o.error) {
-                            opts.onChunk(o.error);
-                            opts.onComplete({});
-                            continue;
+                            fail(o.error);
+                            return;
                         }
-                        if (o.message.content) {
+                        if (o.message?.content) {
                             content += o.message.content;
                             opts.onChunk(o.message.content);
                         }
-                        if (o.message.tool_calls) {
+                        if (o.message?.tool_calls) {
                             toolCalls.push(...o.message.tool_calls);
                         }
                         if (o.done) {
-                            o.message.content = o.message.content + content;
-                            o.message.tool_calls = toolCalls;
-                            opts.onComplete(o.message);
+                            // `content` already holds every delta of this final
+                            // message too, so it is the whole answer on its own
+                            complete(Object.assign({ role: "assistant" }, o.message, {
+                                content,
+                                tool_calls: toolCalls,
+                            }));
+                            return;
                         }
                     }
                 } catch (e) {
@@ -333,18 +426,22 @@ function ollama(req, opts) {
 
                 // Continue reading
                 readStream();
+            }).catch(error => {
+                // a malformed chunk would otherwise reject unobserved: this chain
+                // is not returned to the outer promise, so its .catch never sees it
+                fail(`Error: ${error.message}`);
             });
         }
 
         if (response.status == 403) {
-            opts.onChunk("403 Forbidden, please restart Ollama with `OLLAMA_ORIGINS=chrome-extension://*`.");
-            opts.onComplete({});
+            fail("403 Forbidden, please restart Ollama with `OLLAMA_ORIGINS=chrome-extension://*`.");
+        } else if (response.status !== 200) {
+            fail(`Error ${response.status}: ollama refused the request.`);
         } else {
             readStream();
         }
     }).catch(error => {
-        opts.onChunk(`Error: ${error.message}`);
-        opts.onComplete({});
+        fail(`Error: ${error.message}`);
     });
 }
 
@@ -354,30 +451,70 @@ function openAICompatible(req, opts, client) {
     const decoder = new TextDecoder();
     const abortCtrl = new AbortController();
 
+    // Exactly one completion, whatever route the stream ends by: the caller books
+    // the shared `llmResponse` handler for the request, and a stream that never
+    // completes holds that booking forever, which silently disables every LLM
+    // feature in the frame until a reload.
+    let completed = false;
+    const complete = (message) => {
+        if (completed) {
+            return;
+        }
+        completed = true;
+        opts.onComplete(message);
+    };
+    const fail = (msg) => {
+        opts.onChunk(msg);
+        complete({});
+    };
+
     if (!client) {
-        opts.onChunk('Please set up the provider correctly.');
-        opts.onComplete({});
+        fail('Please set up the provider correctly.');
         return () => abortCtrl.abort();
     }
     if (!client.serviceUrl) {
-        opts.onChunk('Please set service URL correctly.');
-        opts.onComplete({});
+        fail('Please set service URL correctly.');
         return () => abortCtrl.abort();
     }
     if (!client.apiKey) {
-        opts.onChunk(`Please set api key for ${client.name || 'the provider'} correctly.`);
-        opts.onComplete({});
+        fail(`Please set api key for ${client.name || 'the provider'} correctly.`);
         return () => abortCtrl.abort();
     }
     if (!client.model) {
-        opts.onChunk('Please set model correctly.');
-        opts.onComplete({});
+        fail('Please set model correctly.');
         return () => abortCtrl.abort();
     }
 
-    const transformMessages = msgs => msgs.map(m =>
-        typeof m.content === 'string' ? m : { role: m.role, content: m.content[0].text }
-    );
+    /*
+     * Content is a plain string in this shape, while the frontend may hold it as the
+     * block array the anthropic shape uses. EVERY text block is joined, not just the
+     * first: a conversation carried over from another provider has its turns folded
+     * together, so one turn can hold what the model said before and after a tool
+     * call, and keeping only block 0 would drop the answer while still showing it on
+     * screen. Non-text blocks are the other provider's tool bookkeeping and have no
+     * meaning here.
+     *
+     * `tool_calls` and `tool_call_id` have to survive too: a conversation that has
+     * called a tool is replayed on every following request, and a provider rejects
+     * one where a tool message does not name the call it answers.
+     */
+    const textOf = content => (content || [])
+        .filter(c => c && c.type === 'text' && c.text)
+        .map(c => c.text)
+        .join('\n\n');
+    const transformMessages = msgs => msgs.map((m) => {
+        const out = {
+            role: m.role,
+            content: typeof m.content === 'string' ? m.content : textOf(m.content),
+        };
+        if (m.tool_calls) {
+            out.tool_calls = m.tool_calls;
+        }
+        if (m.tool_call_id) {
+            out.tool_call_id = m.tool_call_id;
+        }
+        return out;
+    });
 
     fetch(client.serviceUrl, {
         method: 'POST',
@@ -388,6 +525,11 @@ function openAICompatible(req, opts, client) {
         body: JSON.stringify({
             model: client.model,
             stream: true,
+            tools: req.tools,
+            // "none" makes the model answer with what it has instead of calling
+            // another tool, while leaving the declarations the earlier turns of this
+            // conversation refer to in place
+            tool_choice: req.tool_choice,
             messages: transformMessages(req.messages),
         }),
         signal: abortCtrl.signal,
@@ -398,6 +540,15 @@ function openAICompatible(req, opts, client) {
             let fullContent = '';
             let emittedLen = 0;
             let afterThink = false;
+
+            if (resp.status !== 200) {
+                // an error body is not an SSE stream, so the loop below would find no
+                // `data:` line and end with nobody released
+                reader.read().then(({ value }) => {
+                    fail(`Error ${resp.status}: ${value ? decoder.decode(value) : 'no response body'}`);
+                }).catch(err => fail(`Error ${resp.status}: ${err.message}`));
+                return;
+            }
 
             const addContent = (txt) => {
                 fullContent += txt;
@@ -430,10 +581,50 @@ function openAICompatible(req, opts, client) {
                 }
             };
 
+            /*
+             * A tool call is streamed in fragments, keyed by `index`: the id and the
+             * name may arrive in one delta and the arguments over many, so each slot
+             * is accumulated rather than replaced.
+             */
+            const toolCalls = [];
+            const addToolCallDeltas = (deltas) => {
+                deltas.forEach((d, n) => {
+                    const at = d.index === undefined ? n : d.index;
+                    if (!toolCalls[at]) {
+                        toolCalls[at] = { id: '', type: 'function', function: { name: '', arguments: '' } };
+                    }
+                    const call = toolCalls[at];
+                    if (d.id) {
+                        call.id = d.id;
+                    }
+                    if (d.function && d.function.name) {
+                        call.function.name += d.function.name;
+                    }
+                    if (d.function && d.function.arguments) {
+                        call.function.arguments += d.function.arguments;
+                    }
+                });
+            };
+
+            const finish = () => {
+                const message = { role: 'assistant', content: [contentBlock] };
+                const calls = toolCalls.filter(Boolean);
+                if (calls.length > 0) {
+                    // the tool result is keyed by this id, so a provider that streamed
+                    // none is given one rather than a conversation it cannot answer
+                    message.tool_calls = calls.map((c, n) => (
+                        c.id ? c : Object.assign({}, c, { id: `call_${n}` })
+                    ));
+                }
+                complete(message);
+            };
+
             const readStream = () => {
                 reader.read()
                     .then(({ done, value }) => {
                         if (done) {
+                            // not every provider sends `[DONE]` before closing
+                            finish();
                             return;
                         }
                         const chunk = decoder.decode(value);
@@ -446,12 +637,16 @@ function openAICompatible(req, opts, client) {
                                 }
                                 const data = line.replace(dataPat, '');
                                 if (data === '[DONE]') {
-                                    opts.onComplete({ role: 'assistant', content: [contentBlock] });
+                                    finish();
                                     return;
                                 }
                                 const o = JSON.parse(data);
-                                if (o.choices?.[0]?.delta?.content) {
-                                    addContent(o.choices[0].delta.content);
+                                const delta = o.choices?.[0]?.delta;
+                                if (delta?.content) {
+                                    addContent(delta.content);
+                                }
+                                if (delta?.tool_calls) {
+                                    addToolCallDeltas(delta.tool_calls);
                                 }
                             }
                         } catch (e) {
@@ -463,8 +658,7 @@ function openAICompatible(req, opts, client) {
                     .catch(err => {
                         if (err.name !== 'AbortError') {
                             console.error('Stream error:', err);
-                            opts.onChunk(`Error: ${err.message}`);
-                            opts.onComplete({});
+                            fail(`Error: ${err.message}`);
                         }
                     });
             };
@@ -474,8 +668,7 @@ function openAICompatible(req, opts, client) {
         .catch(err => {
             if (err.name !== 'AbortError') {
                 console.error('Fetch error:', err);
-                opts.onChunk(`Error: ${err.message}`);
-                opts.onComplete({});
+                fail(`Error: ${err.message}`);
             }
         });
 

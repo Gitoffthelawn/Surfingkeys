@@ -140,11 +140,54 @@ body {
 #sk_omnibarSearchResult.llmChat>ul>li.role-user:before {
     content: var(--llm-user-icon, '🐝');
 }
+/*
+ * A prompt is shown as the text it is, never parsed as markdown, so its line
+ * breaks are only visible if they are kept -- and a pasted multi-line question
+ * would otherwise collapse onto one line.
+ */
+#sk_omnibarSearchResult.llmChat>ul>li.role-user {
+    white-space: pre-wrap;
+}
 #sk_omnibarSearchResult.llmChat>ul>li.role-assistant:before {
     content: var(--llm-assistant-icon, '👩‍🎓');
 }
 #sk_omnibarSearchResult.llmChat>ul>li.role-surfingkeys:before {
     content: var(--llm-assistant-icon, 'ℹ︎');
+}
+#sk_omnibarSearchResult.llmChat>ul>li.role-confirm:before {
+    content: var(--llm-confirm-icon, '🔐');
+}
+#sk_omnibarSearchResult.llmChat>ul>li.role-confirm {
+    border-left: 3px solid #d98c00;
+}
+#sk_omnibarSearchResult.llmChat .confirmArgs {
+    margin: 4px 0;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-family: monospace;
+}
+#sk_omnibarSearchResult.llmChat .confirmWarning {
+    margin: 4px 0;
+    overflow-wrap: anywhere;
+}
+#sk_omnibarSearchResult.llmChat .confirmActions {
+    display: flex;
+    gap: 12px;
+    padding: 4px 0 2px 0;
+}
+#sk_omnibarSearchResult.llmChat .confirmChoice {
+    cursor: pointer;
+    opacity: 0.85;
+}
+#sk_omnibarSearchResult.llmChat .confirmChoice:hover {
+    opacity: 1;
+    text-decoration: underline;
+}
+#sk_omnibarSearchResult.llmChat .confirmChoice>kbd {
+    border: 1px solid currentColor;
+    border-radius: 3px;
+    padding: 0 4px;
+    margin-right: 4px;
 }
 .sk_theme #sk_omnibarSearchResult>ul>li:nth-child(odd) {
     background: #fafafa;

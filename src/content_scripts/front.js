@@ -706,6 +706,21 @@ function createFront(insert, normal, hints, visual, browser) {
         return toMarkdown(document.body);
     };
 
+    /*
+     * Point the user at a passage on the page, for the LLM chat's
+     * `highlight_on_page`: the answer says what the page says, this says where it
+     * says it. The marks are the ones `/` leaves behind, so `n` walks them and Esc
+     * clears them, and nothing here enters visual mode -- the omnibar still has the
+     * focus while the chat is open.
+     *
+     * Answers with a count rather than a boolean: a query that matched nothing is
+     * something the model has to be told, since it will otherwise report that it
+     * highlighted a phrase the page does not contain.
+     */
+    _actions["highlightOnPage"] = function(message) {
+        return { count: visual.highlightMatches(message.query) };
+    };
+
     var _pendingQuery;
     function clearPendingQuery() {
         if (_pendingQuery) {

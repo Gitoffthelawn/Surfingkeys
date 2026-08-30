@@ -18,10 +18,15 @@ function respondWith(responses) {
 describe('llmtools', () => {
     let tools;
     let mockPageMarkdown;
+    let mockHighlight;
 
     beforeEach(() => {
         mockPageMarkdown = jest.fn().mockResolvedValue({ markdown: '', picked: false });
-        tools = LLMTools({ pageMarkdown: (...args) => mockPageMarkdown(...args) });
+        mockHighlight = jest.fn().mockResolvedValue({ count: 1 });
+        tools = LLMTools({
+            pageMarkdown: (...args) => mockPageMarkdown(...args),
+            highlight: (...args) => mockHighlight(...args),
+        });
         mockRUNTIME.mockReset();
     });
 
@@ -653,38 +658,329 @@ describe('llmtools', () => {
         });
     });
 
-    describe('explain', () => {
+    describe('page_outline', () => {
+        const page = (markdown) => mockPageMarkdown.mockResolvedValue({ markdown, picked: false });
 
-        test('returns null for a tool that does not exist', () => {
-            expect(tools.explain('rm_rf', {})).toBeNull();
+        test('lists the headings with the offset that reads from each one', async () => {
+            page('# Title\n\nintro text\n\n## Install\n\nrun it\n\n## Usage\n\ndo it');
+            const result = await tools.run('page_outline', {});
+
+            expect(result).toContain('# Title');
+            expect(result).toContain('## Install');
+            expect(result).toContain('## Usage');
+            expect(result).toContain('3 heading(s) of the current page');
+            // the offset of the heading LINE, so read_page starts at the heading
+            expect(result).toContain('[offset 0]');
+            expect(result).toContain('call read_page with one of these offsets');
         });
 
-        test('names what the call would do', () => {
-            expect(tools.explain('search_bookmarks', { query: 'rust' })).toEqual({
+        test('the offsets it reports are the ones read_page reads from', async () => {
+            const md = '# Title\n\nintro\n\n## Install\n\nrun it';
+            page(md);
+            const outline = await tools.run('page_outline', {});
+            const offset = Number(outline.match(/\[offset (\d+)\]\s+## Install/)[1]);
+
+            expect(md.slice(offset)).toBe('## Install\n\nrun it');
+            expect(await tools.run('read_page', { offset })).toContain('## Install');
+        });
+
+        /*
+         * A `#` line in a shell snippet is a comment, and an outline that lists it
+         * sends the model into the middle of a code block for a section that does
+         * not exist.
+         */
+        test('does not mistake a comment in a code block for a heading', async () => {
+            page('# Real\n\n```sh\n# not a heading\necho hi\n```\n\n## Also real');
+            const result = await tools.run('page_outline', {});
+
+            expect(result).toContain('2 heading(s)');
+            expect(result).not.toContain('not a heading');
+        });
+
+        test('keeps only the levels asked for', async () => {
+            page('# One\n\n## Two\n\n### Three\n\n#### Four');
+            const result = await tools.run('page_outline', { maxDepth: 2 });
+
+            expect(result).toContain('# One');
+            expect(result).toContain('## Two');
+            expect(result).not.toContain('### Three');
+            expect(result).not.toContain('#### Four');
+        });
+
+        test('sends the model elsewhere when the page has no headings', async () => {
+            page('just a wall of text with no structure at all');
+            const result = await tools.run('page_outline', {});
+
+            expect(result).toContain('no headings');
+            expect(result).toContain('search_page');
+        });
+
+        test('outlines only the picked part when there is one', async () => {
+            mockPageMarkdown.mockResolvedValue({ markdown: '## Picked bit\n\ntext', picked: true });
+            const result = await tools.run('page_outline', {});
+
+            expect(result).toContain('the part of the page the user picked');
+        });
+    });
+
+    describe('highlight_on_page', () => {
+        test('marks the passage and says what the user can do with it', async () => {
+            mockHighlight.mockResolvedValue({ count: 3 });
+            const result = await tools.run('highlight_on_page', { query: 'the timeout is 30 seconds' });
+
+            expect(mockHighlight).toHaveBeenCalledWith('the timeout is 30 seconds');
+            expect(result).toContain('Highlighted 3 occurrence(s)');
+            expect(result).toContain('scrolled the first one into view');
+        });
+
+        /*
+         * A model that paraphrases gets no match, and must be told -- otherwise it
+         * reports having pointed at a sentence the page does not contain.
+         */
+        test('says nothing matched rather than letting the model claim it did', async () => {
+            mockHighlight.mockResolvedValue({ count: 0 });
+            const result = await tools.run('highlight_on_page', { query: 'roughly this' });
+
+            expect(result).toContain('Nothing on the page matches');
+            expect(result).toContain('rather than paraphrasing');
+        });
+
+        test('refuses an empty query without touching the page', async () => {
+            const result = await tools.run('highlight_on_page', { query: '  ' });
+
+            expect(result).toContain('non-empty query');
+            expect(mockHighlight).not.toHaveBeenCalled();
+        });
+
+        test('reports a page that cannot be reached from this chat', async () => {
+            const bare = LLMTools();
+            expect(await bare.run('highlight_on_page', { query: 'x' }))
+                .toContain('cannot be highlighted');
+        });
+
+        test('passes the error the page reported back to the model', async () => {
+            mockHighlight.mockResolvedValue({ error: 'The page did not answer.' });
+            expect(await tools.run('highlight_on_page', { query: 'x' })).toBe('The page did not answer.');
+        });
+    });
+
+    describe('list_tabs ids', () => {
+        /*
+         * The id is the handle every tab tool takes, and the window is next to it
+         * because a tab group cannot span windows.
+         */
+        test('reports the id and window of each tab', async () => {
+            respondWith({ getTabs: { tabs: [
+                { id: 7, windowId: 1, title: 'Inbox', url: 'https://mail/', active: true },
+                { id: 9, windowId: 2, title: 'Docs', url: 'https://docs/', pinned: true },
+            ] } });
+            const result = await tools.run('list_tabs', { currentWindowOnly: false });
+
+            expect(result).toContain('[tab 7, window 1] Inbox | https://mail/ | active');
+            expect(result).toContain('[tab 9, window 2] Docs | https://docs/ | pinned');
+        });
+    });
+
+    describe('open_url', () => {
+        // a foreground tab would detach the frontend and take the chat down with it
+        test('opens a background tab and reports the one it can see', async () => {
+            respondWith({ getTabs: { tabs: [{ id: 5, windowId: 1, url: 'https://example.com/x', title: 'Example' }] } });
+            const result = await tools.run('open_url', { url: 'https://example.com/x' });
+
+            expect(mockRUNTIME).toHaveBeenCalledWith('openLink', {
+                url: 'https://example.com/x',
+                tab: { tabbed: true, active: false },
+            });
+            expect(result).toContain('background tab 5');
+            expect(result).toContain('"Example"');
+            expect(result).toContain('still on the page they were on');
+        });
+
+        // a tab that has not committed yet reports its destination as pendingUrl
+        test('finds a tab that is still loading', async () => {
+            respondWith({ getTabs: { tabs: [{ id: 6, windowId: 1, url: '', pendingUrl: 'https://slow.com/', title: '' }] } });
+            expect(await tools.run('open_url', { url: 'https://slow.com/' })).toContain('background tab 6');
+        });
+
+        /*
+         * `openLink` answers nothing, so a tab that cannot be found is reported as
+         * exactly that: the alternative is telling the user a page opened when it
+         * may not have.
+         */
+        test('does not claim a tab it cannot see', async () => {
+            respondWith({ getTabs: { tabs: [] } });
+            const result = await tools.run('open_url', { url: 'https://example.com/' });
+
+            expect(result).toContain('no tab with that URL can be seen yet');
+            expect(result).toContain('Do not claim more than that');
+        });
+
+        test.each([
+            ['a relative path', '/settings'],
+            ['a scheme that is not http', 'javascript:alert(1)'],
+            ['a file url', 'file:///etc/passwd'],
+            ['nothing at all', ''],
+        ])('refuses %s without asking the browser', async (_label, url) => {
+            const result = await tools.run('open_url', { url });
+
+            expect(result).toContain('Refused');
+            expect(mockRUNTIME).not.toHaveBeenCalled();
+        });
+    });
+
+    describe('group_tabs', () => {
+        const tabs = [
+            { id: 11, windowId: 1, title: 'Inbox', url: 'https://mail/' },
+            { id: 12, windowId: 1, title: 'Pull requests', url: 'https://github/' },
+            { id: 13, windowId: 2, title: 'Elsewhere', url: 'https://other/' },
+        ];
+
+        test('groups the tabs and reads the group back', async () => {
+            respondWith({
+                getTabs: { tabs },
+                createTabGroup: { groupId: 77, tabIds: [11, 12] },
+                getTabGroups: { groups: [{ id: 77, title: 'work', color: 'blue', tabs: [{ id: 11 }, { id: 12 }] }] },
+            });
+            const result = await tools.run('group_tabs', { tabIds: [11, 12], title: 'work', color: 'blue' });
+
+            expect(mockRUNTIME).toHaveBeenCalledWith('createTabGroup',
+                { tabIds: [11, 12], title: 'work', color: 'blue' }, expect.any(Function));
+            expect(result).toContain('Grouped 2 tab(s) into group 77 named "work"');
+            expect(result).toContain('Inbox');
+            expect(result).toContain('Nothing was closed');
+        });
+
+        /*
+         * Models invent ids. An id that matches nothing is answered with "call
+         * list_tabs again" instead of being handed to the browser.
+         */
+        test('refuses an id that is not an open tab', async () => {
+            respondWith({ getTabs: { tabs } });
+            const result = await tools.run('group_tabs', { tabIds: [11, 42] });
+
+            expect(result).toContain('no open tab with id 42');
+            expect(mockRUNTIME).not.toHaveBeenCalledWith('createTabGroup', expect.anything(), expect.anything());
+        });
+
+        /*
+         * Grouping across windows does not fail -- the browser MOVES tabs into one
+         * window, which is a far larger change than the prompt described.
+         */
+        test('refuses to group tabs from two windows', async () => {
+            respondWith({ getTabs: { tabs } });
+            const result = await tools.run('group_tabs', { tabIds: [11, 13] });
+
+            expect(result).toContain('different windows');
+            expect(mockRUNTIME).not.toHaveBeenCalledWith('createTabGroup', expect.anything(), expect.anything());
+        });
+
+        test('refuses a color the browser would throw on', async () => {
+            const result = await tools.run('group_tabs', { tabIds: [11], color: 'chartreuse' });
+
+            expect(result).toContain('not a tab group color');
+            expect(result).toContain('blue');
+            expect(mockRUNTIME).not.toHaveBeenCalled();
+        });
+
+        test('asks for the ids instead of guessing when none were given', async () => {
+            const result = await tools.run('group_tabs', { tabIds: [] });
+
+            expect(result).toContain('Call list_tabs first');
+            expect(mockRUNTIME).not.toHaveBeenCalled();
+        });
+
+        // ollama and the openai shape both send arguments as JSON, and a model may
+        // put the numbers in quotes; a word among them is dropped, not coerced
+        test('takes ids the model sent as strings', async () => {
+            respondWith({
+                getTabs: { tabs },
+                createTabGroup: { groupId: 77 },
+                getTabGroups: { groups: [] },
+            });
+            await tools.run('group_tabs', { tabIds: ['11', '12'] });
+
+            expect(mockRUNTIME).toHaveBeenCalledWith('createTabGroup',
+                expect.objectContaining({ tabIds: [11, 12] }), expect.any(Function));
+        });
+
+        test('names the same tab twice only once', async () => {
+            respondWith({
+                getTabs: { tabs },
+                createTabGroup: { groupId: 77 },
+                getTabGroups: { groups: [] },
+            });
+            await tools.run('group_tabs', { tabIds: [11, 11, 12] });
+
+            expect(mockRUNTIME).toHaveBeenCalledWith('createTabGroup',
+                expect.objectContaining({ tabIds: [11, 12] }), expect.any(Function));
+        });
+
+        test('reports a browser that cannot group tabs', async () => {
+            respondWith({
+                getTabs: { tabs },
+                createTabGroup: { error: 'tab groups are not supported by this browser' },
+            });
+            const result = await tools.run('group_tabs', { tabIds: [11] });
+
+            expect(result).toContain('could not be grouped');
+            expect(result).toContain('not supported');
+        });
+    });
+
+    describe('isMutating', () => {
+        test('is false for every tool that only reports', () => {
+            ['read_page', 'search_page', 'page_outline', 'list_page_links', 'highlight_on_page',
+                'search_browsing_history', 'search_bookmarks', 'list_recently_closed_tabs',
+                'list_tabs', 'list_downloads', 'fetch_url'].forEach((name) => {
+                expect(tools.isMutating(name)).toBe(false);
+            });
+        });
+
+        test('is true for every tool that changes something', () => {
+            ['open_url', 'group_tabs'].forEach((name) => {
+                expect(tools.isMutating(name)).toBe(true);
+            });
+        });
+
+        // a name nobody declared is refused by `run` anyway, and the cautious answer
+        // is the right one for the host asking about it
+        test('is true for a tool that does not exist', () => {
+            expect(tools.isMutating('rm_rf')).toBe(true);
+        });
+    });
+
+    describe('explain', () => {
+
+        test('returns null for a tool that does not exist', async () => {
+            expect(await tools.explain('rm_rf', {})).toBeNull();
+        });
+
+        test('names what the call would do', async () => {
+            expect(await tools.explain('search_bookmarks', { query: 'rust' })).toEqual({
                 action: 'read your bookmarks and send the matches to the LLM provider',
                 args: 'query: rust',
                 warning: null,
             });
         });
 
-        test('puts one argument per line, so a long one cannot push another out of sight', () => {
-            expect(tools.explain('search_browsing_history', { query: 'a'.repeat(100), maxResults: 3 }).args)
+        test('puts one argument per line, so a long one cannot push another out of sight', async () => {
+            expect((await tools.explain('search_browsing_history', { query: 'a'.repeat(100), maxResults: 3 })).args)
                 .toBe(`query: ${'a'.repeat(100)}\nmaxResults: 3`);
         });
 
-        test('shows a structured argument as JSON rather than as [object Object]', () => {
-            const { args } = tools.explain('list_tabs', { currentWindowOnly: { nested: true } });
+        test('shows a structured argument as JSON rather than as [object Object]', async () => {
+            const { args } = await tools.explain('list_tabs', { currentWindowOnly: { nested: true } });
 
             expect(args).toBe('currentWindowOnly: {"nested":true}');
         });
 
-        test('accepts the arguments as a JSON string', () => {
-            expect(tools.explain('fetch_url', '{"url":"https://example.com"}').args)
+        test('accepts the arguments as a JSON string', async () => {
+            expect((await tools.explain('fetch_url', '{"url":"https://example.com"}')).args)
                 .toBe('url: https://example.com');
         });
 
-        test('shows unparsable arguments rather than hiding them', () => {
-            expect(tools.explain('fetch_url', '{"url": ').args).toContain('{"url": ');
+        test('shows unparsable arguments rather than hiding them', async () => {
+            expect((await tools.explain('fetch_url', '{"url": ')).args).toContain('{"url": ');
         });
 
         test.each([
@@ -698,26 +994,93 @@ describe('llmtools', () => {
             ['IPv6 link-local', 'http://[fe80::1]/x'],
             ['loopback written as an integer', 'http://2130706433/x'],
             ['loopback written as hex', 'http://0x7f000001/x'],
-        ])('warns that %s is not somewhere the page could have reached', (_label, url) => {
-            expect(tools.explain('fetch_url', { url }).warning).toContain('private/loopback');
+        ])('warns that %s is not somewhere the page could have reached', async (_label, url) => {
+            expect((await tools.explain('fetch_url', { url })).warning).toContain('private/loopback');
         });
 
         test.each([
             ['an ordinary host', 'https://example.com/page'],
             ['a public address', 'https://93.184.216.34/page'],
             ['a host that merely starts like a private one', 'https://127.example.com/page'],
-        ])('does not warn about %s', (_label, url) => {
-            expect(tools.explain('fetch_url', { url }).warning).toBeNull();
+        ])('does not warn about %s', async (_label, url) => {
+            expect((await tools.explain('fetch_url', { url })).warning).toBeNull();
         });
 
-        test('does not warn about an unparsable url, which run refuses anyway', () => {
-            expect(tools.explain('fetch_url', { url: 'not a url' }).warning).toBeNull();
+        test('does not warn about an unparsable url, which run refuses anyway', async () => {
+            expect((await tools.explain('fetch_url', { url: 'not a url' })).warning).toBeNull();
         });
 
-        test('warns that the local paths of downloads name the home directory', () => {
-            expect(tools.explain('list_downloads', { includePath: true }).warning)
+        test('warns that the local paths of downloads name the home directory', async () => {
+            expect((await tools.explain('list_downloads', { includePath: true })).warning)
                 .toContain('home directory');
-            expect(tools.explain('list_downloads', {}).warning).toBeNull();
+            expect((await tools.explain('list_downloads', {})).warning).toBeNull();
+        });
+
+        /*
+         * A write tool has to name its TARGET, not merely its own job: "open a URL"
+         * is not a decision anyone can make.
+         */
+        test('names what a write tool would act on', async () => {
+            expect((await tools.explain('open_url', { url: 'https://example.com/x' })).action)
+                .toBe('open https://example.com/x in a new background tab');
+        });
+
+        test('warns that a URL the page could not have reached is about to be opened', async () => {
+            expect((await tools.explain('open_url', { url: 'http://192.168.1.1/reboot' })).warning)
+                .toContain('private/loopback');
+        });
+
+        /*
+         * The ids the model passes around mean nothing to the person reading the
+         * prompt, so describing the call means looking the tabs up -- which is why
+         * `explain` is asynchronous.
+         */
+        test('names the tabs a group_tabs call would touch, by title', async () => {
+            respondWith({ getTabs: { tabs: [
+                { id: 11, windowId: 1, title: 'Inbox' },
+                { id: 12, windowId: 1, title: 'Pull requests' },
+            ] } });
+            const { action } = await tools.explain('group_tabs', { tabIds: [11, 12], title: 'work' });
+
+            expect(action).toBe('put 2 tabs: "Inbox", "Pull requests" into a tab group named "work"');
+        });
+
+        test('says which of the ids is not an open tab', async () => {
+            respondWith({ getTabs: { tabs: [{ id: 11, windowId: 1, title: 'Inbox' }] } });
+            const { action } = await tools.explain('group_tabs', { tabIds: [11, 42] });
+
+            expect(action).toContain('"Inbox"');
+            expect(action).toContain('1 of the ids is not an open tab');
+        });
+
+        test('falls back to the ids when no tab can be read', async () => {
+            respondWith({ getTabs: { tabs: [] } });
+            const { action } = await tools.explain('group_tabs', { tabIds: [11, 12] });
+
+            expect(action).toContain('tab ids 11, 12');
+        });
+
+        /*
+         * Nothing about describing a call may cost the prompt: a description that
+         * fails must still leave the user something to approve or deny.
+         */
+        test('still describes the call when the lookup times out', async () => {
+            jest.useFakeTimers();
+            mockRUNTIME.mockImplementation(() => {});
+            const pending = tools.explain('group_tabs', { tabIds: [11] });
+            jest.advanceTimersByTime(20000);
+            const { action } = await pending;
+
+            expect(action).toContain('tab ids 11');
+            jest.useRealTimers();
+        });
+
+        test('a long title is cut rather than allowed to fill the prompt', async () => {
+            respondWith({ getTabs: { tabs: [{ id: 11, windowId: 1, title: 'T'.repeat(200) }] } });
+            const { action } = await tools.explain('group_tabs', { tabIds: [11] });
+
+            expect(action).toContain('…');
+            expect(action.length).toBeLessThan(120);
         });
     });
 });

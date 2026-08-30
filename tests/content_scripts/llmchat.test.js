@@ -634,6 +634,82 @@ describe('llmchat tool-use confirmation', () => {
     });
 
 
+    /*
+     * A standing permission is a judgement made once about calls that have not
+     * happened yet. That is reasonable for a tool that only reports; it is not one
+     * for a tool whose ARGUMENTS are the whole decision, chosen per call by a model
+     * reading text the page wrote.
+     */
+    describe('a call that changes something', () => {
+        beforeEach(() => {
+            mockRUNTIME.mockImplementation((action, args, cb) => {
+                if (action === 'getTabs') {
+                    cb({ tabs: [{ id: 11, windowId: 1, title: 'Inbox', url: 'https://mail/' }] });
+                }
+                if (action === 'createTabGroup') { cb({ groupId: 77 }); }
+                if (action === 'getTabGroups') { cb({ groups: [] }); }
+            });
+        });
+
+        test('is confirmed even when the allowlist names it', async () => {
+            runtime.conf.llmAllowedTools = ['group_tabs'];
+
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+
+            expect(confirmPrompt()).toContain('group_tabs');
+            expect(ranTool('createTabGroup')).toBe(false);
+        });
+
+        test('names the tabs it would touch, not just itself', async () => {
+            await modelAsksFor('group_tabs', { tabIds: [11], title: 'work' });
+
+            expect(confirmPrompt()).toContain('"Inbox"');
+            expect(confirmPrompt()).toContain('named "work"');
+        });
+
+        // an option that would decide nothing is worse than no option: it teaches the
+        // user that the prompt is noise
+        test('does not offer "allow for this chat"', async () => {
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+
+            expect(confirmPrompt()).toContain('allow once');
+            expect(confirmPrompt()).toContain('deny');
+            expect(confirmPrompt()).not.toContain('allow for this chat');
+        });
+
+        test('pressing "a" decides nothing, the prompt stays', async () => {
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+            press('a');
+            await flush();
+
+            expect(confirmPrompt()).not.toBeNull();
+            expect(ranTool('createTabGroup')).toBe(false);
+        });
+
+        test('is confirmed again after an earlier call of it was approved', async () => {
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+            press('y');
+            await flush();
+            expect(ranTool('createTabGroup')).toBe(true);
+
+            mockRUNTIME.mockClear();
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+
+            expect(confirmPrompt()).not.toBeNull();
+            expect(ranTool('createTabGroup')).toBe(false);
+        });
+
+        test('runs and reports what it observed once approved', async () => {
+            await modelAsksFor('group_tabs', { tabIds: [11] });
+            press('y');
+            await flush();
+
+            const toolMsg = llmRequests().pop().messages.find((m) => m.role === 'tool');
+            expect(toolMsg.content).toContain('group 77');
+            expect(toolMsg.content).toContain('Inbox');
+        });
+    });
+
     describe('a response that outlives the chat', () => {
         test('denies at once instead of prompting into a hidden UI', async () => {
             // the model is slow, the user presses Esc and moves on
@@ -1002,6 +1078,66 @@ describe('llmchat tool budget', () => {
         await askForTool();
 
         expect(llmRequests().pop().tool_choice).toBeUndefined();
+    });
+
+    /*
+     * Reading costs one round per answer; acting costs two, since the round after a
+     * write is where the model checks what happened and says so. A budget sized for
+     * reads would run out mid-task the moment anything is done rather than merely
+     * looked at.
+     */
+    describe('a task that acts rather than only reads', () => {
+        const EXTRA_ROUNDS_PER_WRITE = 2;
+        const MAX_TOOL_ROUNDS_HARD = 12;
+
+        // one write round: `group_tabs` is never pre-allowed, so it is approved here
+        async function askForWrite(n) {
+            mockBooked.handler({ done: true, message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [{ id: `w_${n}`, function: { name: 'group_tabs', arguments: { tabIds: [11] } } }],
+            } });
+            await flush();
+            jest.advanceTimersByTime(500);
+            chat.onKeydown(new KeyboardEvent('keydown', { key: 'y' }));
+            await flush();
+        }
+
+        beforeEach(() => {
+            mockRUNTIME.mockImplementation((action, args, cb) => {
+                if (action === 'getTabs') {
+                    cb({ tabs: [{ id: 11, windowId: 1, title: 'Inbox', url: 'https://mail/' }] });
+                }
+                if (action === 'createTabGroup') { cb({ groupId: 77 }); }
+                if (action === 'getTabGroups') { cb({ groups: [] }); }
+            });
+        });
+
+        test('a write buys back the round it costs', async () => {
+            await openAndSend();
+            await askForWrite(0);
+            // the budget a read-only turn would have spent by now
+            for (let i = 0; i < MAX_TOOL_ROUNDS - 1; i++) {
+                await askForTool();
+            }
+
+            expect(llmRequests().pop().tool_choice).toBeUndefined();
+
+            for (let i = 0; i < EXTRA_ROUNDS_PER_WRITE; i++) {
+                await askForTool();
+            }
+            expect(llmRequests().pop().tool_choice).toBe('none');
+        });
+
+        test('no amount of writing raises the ceiling', async () => {
+            await openAndSend();
+            for (let i = 0; i < MAX_TOOL_ROUNDS_HARD; i++) {
+                await askForWrite(i);
+            }
+
+            expect(llmRequests().pop().tool_choice).toBe('none');
+            expect(trace()).toContain('tool budget spent');
+        });
     });
 
     /*

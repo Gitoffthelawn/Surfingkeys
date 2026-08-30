@@ -753,6 +753,39 @@ function createVisual(clipboard, hints) {
         }
     };
 
+    /**
+     * Mark every occurrence of a LITERAL string and bring the first one into view,
+     * without entering visual mode and without moving the selection.
+     *
+     * `visualEnter` is the same highlight followed by a mode change and a selection
+     * on the match, which is what a user pressing Enter on `/` asked for. A caller
+     * that is only pointing the user at something did not: the LLM chat highlights
+     * where on the page its answer came from while the omnibar still holds the
+     * focus, and entering visual mode under it would leave the two fighting over
+     * every keystroke.
+     *
+     * The query is escaped rather than compiled, because it comes from a model or
+     * from page text rather than from someone typing a pattern: an unbalanced
+     * bracket in it would otherwise throw instead of matching nothing.
+     *
+     * @param {string} query the text to look for.
+     * @returns {number} how many occurrences were marked.
+     */
+    self.highlightMatches = function (query) {
+        self.visualClear();
+        if (!query) {
+            return 0;
+        }
+        const escaped = query.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        highlight(new RegExp(escaped, runtime.getCaseSensitive(query) ? "" : "i"));
+        if (matches.length) {
+            // `highlight` already picked the first occurrence at or below the top of
+            // the viewport, so this scrolls only when there is none in view
+            scrollIntoViewIfNeeded(matches[currentOccurrence][2][0], true);
+        }
+        return matches.length;
+    };
+
     self.findSentenceOf = function (query) {
         var wr = new RegExp("\\b" + query + "\\b");
         var elements = getVisibleElements(function(e, v) {

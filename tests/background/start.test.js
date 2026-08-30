@@ -1020,7 +1020,56 @@ describe('start', () => {
             dispatch({action: 'createTabGroup', title: 'Work', color: 'blue'}, senderFor(12));
             expect(chrome.tabs.group).toHaveBeenCalledWith(
                 {tabIds: [12], groupId: undefined}, expect.any(Function));
-            expect(chrome.tabGroups.update).toHaveBeenCalledWith(77, {title: 'Work', color: 'blue'});
+            expect(chrome.tabGroups.update).toHaveBeenCalledWith(
+                77, {title: 'Work', color: 'blue'}, expect.any(Function));
+        });
+
+        /*
+         * A caller that grouped what it LISTED rather than where it sits, and needs
+         * to be told what it got: the LLM chat's `group_tabs` reports the group back
+         * to the model, which must not claim more than actually happened.
+         */
+        it('groups the tabs it was given and answers with the group', () => {
+            const {chrome, dispatch} = bootstrap();
+            const {sendResponse} = dispatch(
+                {action: 'createTabGroup', tabIds: [11, 13], title: 'Docs', needResponse: true},
+                senderFor(12));
+            expect(chrome.tabs.group).toHaveBeenCalledWith(
+                {tabIds: [11, 13], groupId: undefined}, expect.any(Function));
+            expect(sendResponse).toHaveBeenCalledWith({groupId: 77, tabIds: [11, 13]});
+        });
+
+        it('falls back to the sender tab when the id list is empty', () => {
+            const {chrome, dispatch} = bootstrap();
+            dispatch({action: 'createTabGroup', tabIds: []}, senderFor(12));
+            expect(chrome.tabs.group).toHaveBeenCalledWith(
+                {tabIds: [12], groupId: undefined}, expect.any(Function));
+        });
+
+        /*
+         * Reported, not thrown: a throw in the background reaches the caller as a
+         * timeout it can neither explain nor act on.
+         */
+        it('reports a browser that cannot group tabs', () => {
+            const {chrome, dispatch} = bootstrap();
+            delete chrome.tabGroups;
+            const {sendResponse} = dispatch(
+                {action: 'createTabGroup', tabIds: [11], needResponse: true}, senderFor(12));
+            expect(chrome.tabs.group).not.toHaveBeenCalled();
+            expect(sendResponse.mock.calls[0][0].error).toMatch(/not supported/);
+        });
+
+        it('reports a group the browser refused to create', () => {
+            const {chrome, dispatch} = bootstrap();
+            chrome.tabs.group = jest.fn((props, cb) => {
+                chrome.runtime.lastError = {message: 'Tabs cannot be edited right now'};
+                cb(undefined);
+            });
+            const {sendResponse} = dispatch(
+                {action: 'createTabGroup', tabIds: [11], needResponse: true}, senderFor(12));
+            expect(sendResponse.mock.calls[0][0].error).toMatch(/cannot be edited/);
+            expect(chrome.tabGroups.update).not.toHaveBeenCalled();
+            delete chrome.runtime.lastError;
         });
 
         it('does not touch the group when no title or color is given', () => {

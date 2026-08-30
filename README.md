@@ -663,11 +663,12 @@ In insert mode, press `Ctrl-g` to send the text of the current input to the LLM.
 
 ### Browser tools available to the LLM
 
-While chatting, the LLM can look things up in your browser instead of guessing. It decides on its own when a tool is needed, and the chat shows which tool is running. All of them are read-only — nothing is navigated, clicked or written:
+While chatting, the LLM can look things up in your browser instead of guessing. It decides on its own when a tool is needed, and the chat shows which tool is running. Most of the tools only report:
 
 | Tool | What the LLM can do with it |
 | --- | --- |
 | `read_page` | read the page you are looking at, or just the part you picked |
+| `page_outline` | see what a long page covers, and read only the section that matters |
 | `search_page` | find where something is mentioned on that page, without reading all of it |
 | `list_page_links` | see where the page can take you, to follow one of its links |
 | `search_browsing_history` | find a page you visited before, or answer questions about what you have been reading |
@@ -679,7 +680,17 @@ While chatting, the LLM can look things up in your browser instead of guessing. 
 
 So you can ask things like *"summarize this"*, *"which of my open tabs covers authentication?"*, *"what does this page say about rate limits?"*, *"reopen the tab I just closed about Rust"*, *"find the Rust article I read last week and summarize it"*, or *"open the first link on this page and compare it with what I'm reading"*.
 
-`search_page` and `list_page_links` exist so that a question about one detail of a long page does not cost a full read of it: each returns a short list, and `search_page` gives the character offset that makes the `read_page` after it land on the answer rather than at the top. `list_page_links` reads the converter's own output back, which is exact rather than approximate — every unescaped bracket in that text is one the converter wrote, so a link it reports is a link the page really contains, and a page that merely prints `[docs](https://evil.example)` in its text has none.
+A few tools **change** something instead of reporting on it, so that an answer can be acted on rather than only read:
+
+| Tool | What the LLM can do with it |
+| --- | --- |
+| `highlight_on_page` | highlight the passage an answer rests on and scroll to it, so you can see where it came from |
+| `open_url` | open a page in a new background tab, for you to look at when you are done |
+| `group_tabs` | collect open tabs into one named tab group |
+
+So *"where does it say that?"* highlights the sentence on the page (`n` walks the other matches, `Esc` clears them), *"open the changelog it links to"* leaves a tab waiting for you, and *"tidy my GitHub tabs into a group"* does it. These three never touch the page you are on and never close anything: `open_url` opens in the background on purpose, because navigating or switching away would take the chat down with it, and a tab group only collects tabs you already have open — drag one out to undo it. **Every call of them is confirmed, every time, and no setting can waive that** — see below.
+
+`page_outline`, `search_page` and `list_page_links` exist so that a question about one detail of a long page does not cost a full read of it: each returns a short list, and `search_page` gives the character offset that makes the `read_page` after it land on the answer rather than at the top. `list_page_links` reads the converter's own output back, which is exact rather than approximate — every unescaped bracket in that text is one the converter wrote, so a link it reports is a link the page really contains, and a page that merely prints `[docs](https://evil.example)` in its text has none.
 
 `list_downloads` reports the name of each file, not the path to it: that path names your account and home directory, and this is on its way to a third party. Ask where a file was saved and the model can request the full path, which the confirmation prompt then says it is doing.
 
@@ -707,7 +718,7 @@ So *"what would this form send, and where?"* and *"open the second link in the t
 
 Tool use works with every provider. The declarations are sent in the shape each one speaks: the Anthropic shape to Bedrock, and the OpenAI function-calling shape to the custom providers and to Ollama, whose own `/api/chat` accepts that same shape. Note that a small local model may ignore the tools or call them with poor arguments — this works best with a capable model, and a service whose model has no function calling at all will answer with an error.
 
-A single question is allowed five tool rounds. On the fifth the model is asked to answer with what it has gathered instead of calling anything else.
+A single question is allowed five tool rounds. On the fifth the model is asked to answer with what it has gathered instead of calling anything else. A call that changes something buys back the round it costs, up to twelve in all: reading costs one round per answer, while acting costs two, since the round after it is where the model checks what happened and tells you.
 
 #### Every tool call asks first
 
@@ -727,7 +738,14 @@ To stop being asked for tools you trust, list them:
 
     settings.llmAllowedTools = ["read_page", "list_tabs", "fetch_url"];
 
-Anything not listed is still confirmed. The default is `["read_page", "search_page", "list_page_links"]`: reading the page you opened the chat on is the point of opening it there, and none of the three takes a destination, so they have nowhere to send anything — the latter two are served from the same snapshot as `read_page` and report strictly less of it, so asking about them while the whole page goes unasked would only teach you to approve without reading. Set it to `[]` to be asked about those too.
+Anything not listed is still confirmed. The default is `["read_page", "search_page", "list_page_links"]`: reading the page you opened the chat on is the point of opening it there, and none of the three takes a destination, so they have nowhere to send anything — the latter two are served from the same snapshot as `read_page` and report strictly less of it, so asking about them while the whole page goes unasked would only teach you to approve without reading. Set it to `[]` to be asked about those too. `page_outline` and `highlight_on_page` are reasonable additions for the same reason: the first reports strictly less of the page than `read_page`, and the second sends nothing anywhere.
+
+A tool that CHANGES something — `open_url`, `group_tabs` — is asked about every single time. Listing it in `llmAllowedTools` has no effect, and the prompt for it does not offer `a`, because a standing permission is a judgement made once about calls that have not happened yet: with these tools the arguments are the whole decision — which URL, which tabs — and they are chosen per call by a model that has been reading text the page wrote. So the prompt names the target rather than the tool, looking up what the ids mean first:
+
+    🔐 group_tabs wants to put 3 tabs: "Inbox", "Pull requests", "CI — build #4821" into a tab group named "work".
+       tabIds: [7,12,19]
+       title: work
+       y allow once · n deny
 
 ### To use LLM chat with a specified system prompt
 

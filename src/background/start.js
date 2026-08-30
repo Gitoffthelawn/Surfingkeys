@@ -727,13 +727,45 @@ function start(browser) {
             });
         });
     };
+    /*
+     * Group tabs, by default the sender's own. `tabIds` names others instead, for
+     * a caller that grouped what it listed rather than where it sits -- the LLM
+     * chat's `group_tabs`, which is also why this answers with the group it made:
+     * a tool that reports "done" without reading back what happened is a tool the
+     * model can claim success for on nothing.
+     *
+     * `chrome.tabGroups` is absent on some browsers (see getTabGroups below), and
+     * a group cannot span windows, so both are reported rather than thrown -- a
+     * throw in the background reaches a caller as a timeout it cannot act on.
+     */
     self.createTabGroup = function(message, sender, sendResponse) {
-        chrome.tabs.group({tabIds: [sender.tab.id], groupId: message.groupId}, function(groupId) {
+        if (!chrome.tabGroups) {
+            _response(message, sendResponse, {
+                error: "tab groups are not supported by this browser"
+            });
+            return;
+        }
+        const tabIds = Array.isArray(message.tabIds) && message.tabIds.length > 0
+            ? message.tabIds
+            : [sender.tab.id];
+        chrome.tabs.group({tabIds: tabIds, groupId: message.groupId}, function(groupId) {
+            if (chrome.runtime.lastError || groupId === undefined) {
+                _response(message, sendResponse, {
+                    error: chrome.runtime.lastError ? chrome.runtime.lastError.message : "no group was created"
+                });
+                return;
+            }
+            const done = () => _response(message, sendResponse, {
+                groupId: groupId,
+                tabIds: tabIds
+            });
             if (message.title || message.color) {
                 chrome.tabGroups.update(groupId, {
                     title: message.title,
                     color: message.color
-                });
+                }, done);
+            } else {
+                done();
             }
         });
     };

@@ -56,11 +56,15 @@ const runtime = (function() {
             defaultLLMProvider: "ollama",
             defaultSearchEngine: "g",
             defaultVoice: "Daniel",
-            // `read_page` only ever reads the page the user opened the chat on and
-            // takes no destination, so it has nowhere to send anything and asking
-            // about it would be friction on the common case. Every other tool
-            // reaches beyond that page, so it is confirmed until listed here.
-            llmAllowedTools: ["read_page"],
+            // These three only ever read the page the user opened the chat on and
+            // take no destination, so they have nowhere to send anything and asking
+            // about them would be friction on the common case. `search_page` and
+            // `list_page_links` are served from the same snapshot as `read_page`
+            // and report strictly less of it, so confirming them while the whole
+            // page goes unasked would teach the user to approve rather than read.
+            // Every other tool reaches beyond that page, so it is confirmed until
+            // listed here.
+            llmAllowedTools: ["read_page", "search_page", "list_page_links"],
             llmTranslateTarget: "auto",
             editableBodyCare: true,
             enableAutoFocus: true,

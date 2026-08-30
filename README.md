@@ -668,12 +668,20 @@ While chatting, the LLM can look things up in your browser instead of guessing. 
 | Tool | What the LLM can do with it |
 | --- | --- |
 | `read_page` | read the page you are looking at, or just the part you picked |
+| `search_page` | find where something is mentioned on that page, without reading all of it |
+| `list_page_links` | see where the page can take you, to follow one of its links |
 | `search_browsing_history` | find a page you visited before, or answer questions about what you have been reading |
 | `search_bookmarks` | search the pages you deliberately saved |
+| `list_recently_closed_tabs` | find a page that was open a moment ago |
 | `list_tabs` | see the tabs you have open right now |
+| `list_downloads` | see what you saved, where it came from, and whether it finished |
 | `fetch_url` | read another page, to follow a link or check a fact the current page only references |
 
-So you can ask things like *"summarize this"*, *"which of my open tabs covers authentication?"*, *"find the Rust article I read last week and summarize it"*, or *"open the first link on this page and compare it with what I'm reading"*.
+So you can ask things like *"summarize this"*, *"which of my open tabs covers authentication?"*, *"what does this page say about rate limits?"*, *"reopen the tab I just closed about Rust"*, *"find the Rust article I read last week and summarize it"*, or *"open the first link on this page and compare it with what I'm reading"*.
+
+`search_page` and `list_page_links` exist so that a question about one detail of a long page does not cost a full read of it: each returns a short list, and `search_page` gives the character offset that makes the `read_page` after it land on the answer rather than at the top. `list_page_links` reads the converter's own output back, which is exact rather than approximate — every unescaped bracket in that text is one the converter wrote, so a link it reports is a link the page really contains, and a page that merely prints `[docs](https://evil.example)` in its text has none.
+
+`list_downloads` reports the name of each file, not the path to it: that path names your account and home directory, and this is on its way to a third party. Ask where a file was saved and the model can request the full path, which the confirmation prompt then says it is doing.
 
 `read_page` and `fetch_url` hand over the page as Markdown rather than as flat text, because flat text keeps the words and drops everything the words point at. A link becomes its label with no destination, an image contributes nothing however carefully its `alt` was written, a table collapses into one run-on line, and a form becomes a few stray captions with no hint of what submitting it would do — and the model cannot tell that any of it was withheld, so it guesses. As Markdown you get instead:
 
@@ -703,7 +711,7 @@ A single question is allowed five tool rounds. On the fifth the model is asked t
 
 #### Every tool call asks first
 
-A tool call is not necessarily something you asked for. Whatever `read_page` and `fetch_url` return was written by whoever wrote that page, so the conversation contains text nobody in your browser wrote, and it may well be addressed to the model — and `fetch_url` takes a URL, which is also a way to send data out. So each call is confirmed before it runs, showing the tool, what it will do, and the arguments verbatim:
+A tool call is not necessarily something you asked for. Whatever the page-reading tools return was written by whoever wrote that page, so the conversation contains text nobody in your browser wrote, and it may well be addressed to the model — and `fetch_url` takes a URL, which is also a way to send data out. So each call is confirmed before it runs, showing the tool, what it will do, and the arguments verbatim:
 
     🔐 search_browsing_history wants to read your browsing history and send the matches to the LLM provider.
        query: rust async
@@ -719,7 +727,7 @@ To stop being asked for tools you trust, list them:
 
     settings.llmAllowedTools = ["read_page", "list_tabs", "fetch_url"];
 
-Anything not listed is still confirmed. The default is `["read_page"]`: reading the page you opened the chat on is the point of opening it there, and that tool takes no destination, so it has nowhere to send anything. Set it to `[]` to be asked about that too.
+Anything not listed is still confirmed. The default is `["read_page", "search_page", "list_page_links"]`: reading the page you opened the chat on is the point of opening it there, and none of the three takes a destination, so they have nowhere to send anything — the latter two are served from the same snapshot as `read_page` and report strictly less of it, so asking about them while the whole page goes unasked would only teach you to approve without reading. Set it to `[]` to be asked about those too.
 
 ### To use LLM chat with a specified system prompt
 

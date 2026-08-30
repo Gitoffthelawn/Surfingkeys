@@ -32,6 +32,21 @@ const MAX_LIST_ITEMS = 30;
 const PAGE_CHUNK = 6000;
 // a tool must not be able to hold the `llmResponse` booking forever.
 const TOOL_TIMEOUT = 15000;
+/*
+ * How much of a matching line `search_page` reports, and how much of it comes
+ * before the match.
+ *
+ * A "line" is whatever the page made one: a minified script, a data table row or
+ * a single long paragraph can be many thousand characters, and its head says
+ * nothing at all about a match near its end -- so a long line is reported as a
+ * window around the match rather than as its first characters.
+ */
+const MAX_MATCH_LINE = 300;
+const MATCH_LEAD = 80;
+
+// The states `chrome.downloads.search` knows. A state it does not know makes it
+// throw, in the background, where the failure would reach the model as a timeout.
+const DOWNLOAD_STATES = ["in_progress", "complete", "interrupted"];
 
 // Hosts the page's own JavaScript could never reach, so a request to one of them
 // never originates from a legitimate reading of the current page. A heuristic for
@@ -122,7 +137,19 @@ const UNTRUSTED_NOTE = "The text between the fences below was written by the pag
 function fenced(text) {
     // a page can print the closing fence itself, so that whatever follows looks
     // like it came from outside the fence; drop any copy of it.
-    return `${FENCE_BEGIN}\n${text.split(FENCE_END).join("")}\n${FENCE_END}`;
+    return `${FENCE_BEGIN}\n${noFence(text)}\n${FENCE_END}`;
+}
+
+/*
+ * Text that goes OUTSIDE the fence -- a header naming what was searched for, say
+ * -- carrying no fence marker of its own.
+ *
+ * Those arguments come from the model, which a page may well have talked into
+ * choosing them, and a stray marker above the real one leaves a reader unable to
+ * tell which fence is the one that means something.
+ */
+function noFence(text) {
+    return String(text).split(FENCE_BEGIN).join("").split(FENCE_END).join("");
 }
 
 function renderList(items, render) {
@@ -174,6 +201,120 @@ function showValue(value) {
 
 const WHAT_PAGE = "The current page, as Markdown";
 const WHAT_PICKED = "What the user picked on the page, as Markdown";
+const SUBJECT_PAGE = "the current page";
+const SUBJECT_PICKED = "the part of the page the user picked";
+
+/*
+ * The page snapshot the page-reading tools work on, or the one thing to say
+ * instead of it.
+ *
+ * `read_page`, `search_page` and `list_page_links` all serve the same text
+ * through the same door, and the reasons it may not be there -- no host to ask it
+ * of, nothing to read -- are the same for all three, so they are answered once
+ * and in the same words. `error` is set instead of `text` when there is nothing
+ * to work on; nothing here throws, since every one of those cases is something
+ * the model should be told rather than a failure.
+ *
+ * @param {object} ctx what the host handed the factory.
+ * @returns {Promise<{text: string, what: string, subject: string}|{error: string}>}
+ */
+async function pageText(ctx) {
+    if (typeof ctx.pageMarkdown !== "function") {
+        return { error: "The content of the current page is not available in this chat." };
+    }
+    const { markdown, picked } = await ctx.pageMarkdown();
+    // `tidy` is the converter's own rule, applied here too because what the
+    // frame answers with is not this module's to assume anything about
+    const text = tidy(markdown);
+    const what = picked ? WHAT_PICKED : WHAT_PAGE;
+    if (!text) {
+        return { error: `${what} could not be read: it may be empty, still loading, or rendered in a way that leaves no text behind. Ask the user what the page says rather than guessing.` };
+    }
+    return { text, what, subject: picked ? SUBJECT_PICKED : SUBJECT_PAGE };
+}
+
+/*
+ * A matching line, short enough to sit in a list of them, with the match itself
+ * still in it -- see MAX_MATCH_LINE.
+ */
+function excerpt(line, needle, matchCase) {
+    if (line.length <= MAX_MATCH_LINE) {
+        return line;
+    }
+    const at = (matchCase ? line : line.toLowerCase()).indexOf(needle);
+    const start = Math.max(0, at - MATCH_LEAD);
+    const end = Math.min(line.length, start + MAX_MATCH_LINE);
+    return [start > 0 ? "..." : "", line.slice(start, end), end < line.length ? "..." : ""].join("");
+}
+
+/*
+ * `[label](url)` exactly as the converter writes it.
+ *
+ * Reading its own output back is exact rather than approximate, and that is the
+ * whole reason `list_page_links` may do it: every UNESCAPED bracket in that text
+ * is one the converter put there (see `escapeBrackets` in pageMarkdown.js), so a
+ * link matched here is a link the DOM really contains. A page that prints
+ * `[docs](https://evil.example)` in its own text arrives with both of its
+ * brackets escaped and matches nothing -- which is why the bare `<url>` form the
+ * converter uses for an unlabelled link is deliberately NOT matched: angle
+ * brackets in page text are not escaped, so a page could forge one of those.
+ *
+ * The label may itself hold escaped brackets, hence the `\\.` branch. The
+ * destination is either wrapped in angle brackets or free of whitespace, and
+ * balanced either way -- `destination()` guarantees all three.
+ */
+const MD_LINK = /(!?)\[((?:[^[\]\\]|\\.)*)\]\((<[^<>]*>|[^()\s]*(?:\([^()\s]*\)[^()\s]*)*)\)/g;
+
+/**
+ * The links of a converted page, first label kept per destination.
+ *
+ * Images are left out: `![alt](url)` is not somewhere the user can be taken, and
+ * `fetch_url` could not read one anyway.
+ *
+ * @param {string} md the page as Markdown.
+ * @returns {{url: string, label: string}[]} in document order.
+ */
+function pageLinks(md) {
+    const seen = new Map();
+    let m;
+    MD_LINK.lastIndex = 0;
+    while ((m = MD_LINK.exec(md)) !== null) {
+        const [, image, label, dest] = m;
+        const url = dest.startsWith("<") ? dest.slice(1, -1) : dest;
+        if (image || !url || seen.has(url)) {
+            continue;
+        }
+        seen.set(url, label
+            // the label is page text: its own brackets came back escaped, and a
+            // pipe of its own would read as the column that holds the URL
+            .replace(/\\([[\]])/g, "$1")
+            .replace(/\|/g, "\\|")
+            .replace(/\s+/g, " ")
+            .trim());
+    }
+    return Array.from(seen, ([url, label]) => ({ url, label }));
+}
+
+// The name of a downloaded file without the directories leading to it, which name
+// the user's home directory. Both separators: a download on Windows is reported
+// with backslashes.
+function basename(path) {
+    return String(path || "").split(/[/\\]/).pop();
+}
+
+function humanSize(bytes) {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+        return "";
+    }
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let n = bytes;
+    let i = 0;
+    while (n >= 1024 && i < units.length - 1) {
+        n /= 1024;
+        i += 1;
+    }
+    return `${i === 0 ? n : n.toFixed(1)}${units[i]}`;
+}
 
 const definitions = [
     {
@@ -196,16 +337,9 @@ const definitions = [
             required: [],
         },
         run: async ({ offset }, ctx) => {
-            if (typeof ctx.pageMarkdown !== "function") {
-                return "The content of the current page is not available in this chat.";
-            }
-            const { markdown, picked } = await ctx.pageMarkdown();
-            // `tidy` is the converter's own rule, applied here too because what the
-            // frame answers with is not this module's to assume anything about
-            const text = tidy(markdown);
-            const what = picked ? WHAT_PICKED : WHAT_PAGE;
-            if (!text) {
-                return `${what} could not be read: it may be empty, still loading, or rendered in a way that leaves no text behind. Ask the user what the page says rather than guessing.`;
+            const { text, what, error } = await pageText(ctx);
+            if (error) {
+                return error;
             }
             const start = Math.max(Math.trunc(offset) || 0, 0);
             if (start >= text.length) {
@@ -219,6 +353,110 @@ const definitions = [
                 UNTRUSTED_NOTE,
                 fenced(chunk),
                 left > 0 ? `[${left} characters left, call read_page with offset: ${end} to read on]` : "",
+            ].filter(Boolean).join("\n\n");
+        },
+    },
+    {
+        /*
+         * Reading a long page to find one fact costs a round trip per 6000
+         * characters, and every piece is paid for again in each round that
+         * follows. Searching it answers the same question in one call, and hands
+         * back the offsets that make `read_page` land where the answer is.
+         */
+        name: "search_page",
+        description: "Find where something is mentioned on the page the user is looking at, without reading all of it. Returns the matching lines, each with the character offset to hand to read_page to read around it. Prefer this over read_page when the question is about one detail, a name or a number rather than about the page as a whole.",
+        confirmAs: "search the page you are on and send the matching lines to the LLM provider",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "text to look for, matched anywhere in a line, case-insensitively unless matchCase is true",
+                },
+                matchCase: {
+                    type: "boolean",
+                    description: "when true, only lines that match the case of the query are returned",
+                },
+            },
+            required: ["query"],
+        },
+        run: async ({ query, matchCase }, ctx) => {
+            const q = typeof query === "string" ? query.trim() : "";
+            if (!q) {
+                return "A non-empty query is required. Use read_page to read the page from its start.";
+            }
+            const { text, subject, error } = await pageText(ctx);
+            if (error) {
+                return error;
+            }
+            const needle = matchCase ? q : q.toLowerCase();
+            const hits = [];
+            let offset = 0;
+            text.split("\n").forEach((line) => {
+                if ((matchCase ? line : line.toLowerCase()).includes(needle)) {
+                    /*
+                     * The offset of the LINE, not of the match: `read_page` starts
+                     * exactly where it is told, and a line is the smallest piece
+                     * of this text that is whole on its own -- the same reason it
+                     * is where a chunk ends.
+                     */
+                    hits.push({ offset, line: line.trim() });
+                }
+                offset += line.length + 1;
+            });
+            const found = `"${noFence(q)}"`;
+            if (hits.length === 0) {
+                return `${found} does not appear in ${subject}, which is ${text.length} characters long. Try a shorter or differently spelled query, or read_page to read it yourself -- do not conclude from this alone that the page does not cover the subject.`;
+            }
+            return [
+                `${hits.length} line(s) of ${subject} contain ${found}.`,
+                UNTRUSTED_NOTE,
+                fenced(renderList(hits, (h) => `- [offset ${h.offset}] ${excerpt(h.line, needle, matchCase)}`)),
+                "[call read_page with one of these offsets to read the text around a match]",
+            ].join("\n\n");
+        },
+    },
+    {
+        name: "list_page_links",
+        description: "List where the page the user is looking at can take them: the text of each link and the absolute URL behind it, in the order they appear. Use it to find a link to follow with fetch_url, or to answer which pages this one points at, without reading the whole page. Images are not included.",
+        confirmAs: "read the links of the page you are on and send them to the LLM provider",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "keep only links whose text or URL contains this text, matched case-insensitively; omit it to list them all",
+                },
+            },
+            required: [],
+        },
+        run: async ({ query }, ctx) => {
+            const { text, subject, error } = await pageText(ctx);
+            if (error) {
+                return error;
+            }
+            const links = pageLinks(text);
+            if (links.length === 0) {
+                return `${subject} contains no links.`;
+            }
+            const q = (typeof query === "string" ? query : "").trim().toLowerCase();
+            const kept = q
+                ? links.filter((l) => l.url.toLowerCase().includes(q) || l.label.toLowerCase().includes(q))
+                : links;
+            if (kept.length === 0) {
+                return `None of the ${links.length} links of ${subject} match "${noFence(q)}". Call it again without a query to see them all.`;
+            }
+            const header = q
+                ? `${kept.length} of the ${links.length} links of ${subject} match "${noFence(q)}".`
+                : `${links.length} link(s) of ${subject}, as text | URL.`;
+            const narrow = kept.length > MAX_LIST_ITEMS && !q
+                ? "[call list_page_links with a query to narrow this down rather than guessing from the ones shown]"
+                : "";
+            return [
+                header,
+                UNTRUSTED_NOTE,
+                fenced(renderList(kept, (l) => `- ${l.label || "(no text)"} | ${l.url}`)),
+                narrow,
             ].filter(Boolean).join("\n\n");
         },
     },
@@ -277,6 +515,31 @@ const definitions = [
         },
     },
     {
+        /*
+         * Not the same question as history, which is ordered by visit and cannot
+         * say what was still OPEN: a page read yesterday and left open all along
+         * is recent here and old there.
+         */
+        name: "list_recently_closed_tabs",
+        description: "List the tabs and windows the user closed recently, most recently closed first. Use it when the user asks about a page that was open a moment ago -- \"the tab I just closed\", \"what did I have open before\" -- which browsing history, ordered by when a page was visited, cannot answer.",
+        confirmAs: "read the titles and URLs of your recently closed tabs and send them to the LLM provider",
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "keywords matched against the title and the URL, an empty string returns all of them",
+                },
+            },
+            required: [],
+        },
+        run: async ({ query }) => {
+            const resp = await runtimeAsync('getRecentlyClosed', { query: query || "" });
+            const tabs = (resp.urls || []).filter((t) => t.url);
+            return renderList(tabs, (t) => `- ${t.title || "(no title)"} | ${t.url}`);
+        },
+    },
+    {
         name: "list_tabs",
         description: "List the tabs the user currently has open, with their titles and URLs. Use it to answer questions about what the user is working on right now, or to locate a page that is already open.",
         confirmAs: "read the titles and URLs of your open tabs and send them to the LLM provider",
@@ -295,6 +558,68 @@ const definitions = [
             const resp = await runtimeAsync('getTabs', { queryInfo });
             const tabs = resp.tabs || [];
             return renderList(tabs, (t) => `- ${t.title || "(no title)"} | ${t.url}${t.active ? " | active" : ""}`);
+        },
+    },
+    {
+        name: "list_downloads",
+        description: "List the user's recent downloads, most recent first: what was saved, where it came from, and whether it finished. Use it to answer where a file came from, whether a download is done, or to find a file the user saved earlier.",
+        confirmAs: "read your list of downloads and send it to the LLM provider",
+        /*
+         * A download's `filename` is an absolute local path, so it names the
+         * user's account and home directory -- which is why only the file's own
+         * name is reported unless the question really is where it sits on disk.
+         */
+        warn: ({ includePath }) => (includePath
+            ? "the whole local path of each file is included, which names the user's home directory"
+            : null),
+        parameters: {
+            type: "object",
+            properties: {
+                query: {
+                    type: "string",
+                    description: "keywords matched against the file name and the URL it came from",
+                },
+                state: {
+                    type: "string",
+                    enum: DOWNLOAD_STATES,
+                    description: "list only downloads in this state",
+                },
+                includePath: {
+                    type: "boolean",
+                    description: "when true, report the whole local path of each file instead of its name alone; that path names the user's home directory, so ask for it only when the question is where a file was saved",
+                },
+            },
+            required: [],
+        },
+        run: async ({ query, state, includePath }) => {
+            if (state && !DOWNLOAD_STATES.includes(state)) {
+                return `Refused: "${state}" is not a download state. Use one of: ${DOWNLOAD_STATES.join(", ")}.`;
+            }
+            // `chrome.downloads.search` takes terms as an array and throws on a
+            // state it does not know, in the background -- where the throw would
+            // reach the model as a timeout rather than as something it can fix
+            const search = { limit: MAX_LIST_ITEMS, orderBy: ["-startTime"] };
+            if (query) {
+                search.query = [String(query)];
+            }
+            if (state) {
+                search.state = state;
+            }
+            const resp = await runtimeAsync('getDownloads', { query: search });
+            const downloads = resp.downloads || [];
+            return renderList(downloads, (d) => {
+                const name = includePath ? d.filename : basename(d.filename);
+                const size = humanSize(d.state === "complete" ? d.totalBytes : d.bytesReceived);
+                const bits = [
+                    name || "(no file name)",
+                    d.paused ? "paused" : d.state || "unknown state",
+                    d.error || "",
+                    size && d.state === "in_progress" ? `${size} so far` : size,
+                    d.startTime ? `started ${String(d.startTime).slice(0, 10)}` : "",
+                    d.url || "",
+                ];
+                return `- ${bits.filter(Boolean).join(" | ")}`;
+            });
         },
     },
     {

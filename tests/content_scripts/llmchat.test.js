@@ -1095,7 +1095,7 @@ describe('llmchat page text', () => {
         runtime.conf.llmAllowedTools = ['read_page'];
         mockRUNTIME.mockReset();
         // the chat cannot read the page itself, the content script of the frame
-        // that opened the omnibar answers `getPageText`
+        // that opened the omnibar answers `getPageMarkdown`
         contentCommand = jest.fn((args, cb) => cb({ data: 'The page body text.' }));
         document.body.innerHTML = '<div id="bar" style="display: none;"><div id="results"></div><input id="input"></div>';
         container = document.querySelector('#bar');
@@ -1136,9 +1136,30 @@ describe('llmchat page text', () => {
         await modelAsksFor('read_page', {});
 
         expect(contentCommand).toHaveBeenCalledWith(
-            expect.objectContaining({ action: 'getPageText' }), expect.any(Function));
+            expect.objectContaining({ action: 'getPageMarkdown' }), expect.any(Function));
         expect(toolResult()).toContain('The page body text.');
         expect(toolResult()).toContain('UNTRUSTED CONTENT');
+    });
+
+    /*
+     * What the tool asks for is the page as Markdown, and the structure has to
+     * survive the trip: read_page used to re-normalize the text it was handed,
+     * which flattened exactly the indentation that tells a nested list from a flat
+     * one.
+     */
+    test('the structure of the page survives on its way to the model', async () => {
+        contentCommand = jest.fn((args, cb) => cb({
+            data: '# Heading\n\n- see [the docs](https://example.com/docs)\n  - a nested point\n\n![a chart](https://example.com/c.png)',
+        }));
+
+        await openAndSend();
+        await modelAsksFor('read_page', {});
+
+        expect(toolResult()).toContain('# Heading');
+        expect(toolResult()).toContain('[the docs](https://example.com/docs)');
+        expect(toolResult()).toContain('- see ');
+        expect(toolResult()).toContain('  - a nested point');
+        expect(toolResult()).toContain('![a chart](https://example.com/c.png)');
     });
 
     test('reading the page the user opened the chat on is not confirmed', async () => {
@@ -1279,7 +1300,7 @@ describe('llmchat page text', () => {
             await modelCalls('read_page', '{}', 'call_abc');
 
             expect(contentCommand).toHaveBeenCalledWith(
-                expect.objectContaining({ action: 'getPageText' }), expect.any(Function));
+                expect.objectContaining({ action: 'getPageMarkdown' }), expect.any(Function));
             expect(toolTurns()[0].content).toContain('The page body text.');
         });
 

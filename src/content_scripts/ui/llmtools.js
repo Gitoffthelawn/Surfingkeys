@@ -1,4 +1,5 @@
 import { RUNTIME } from '../common/runtime.js';
+import toMarkdown, { tidy } from '../common/pageMarkdown.js';
 
 /*
  * Tools exposed to the LLM, so that it can ground its answers on the user's own
@@ -15,7 +16,7 @@ import { RUNTIME } from '../common/runtime.js';
  * `parameters` is a JSON schema object, and `run(params, ctx)` returns a string
  * (or a promise of one) that is fed back to the model as the tool result. `ctx`
  * is what the host handed to this factory, for the things only it can reach --
- * currently `pageText()`, since the chat runs in the frontend iframe and cannot
+ * currently `pageMarkdown()`, since the chat runs in the frontend iframe and cannot
  * read the page on its own. `schemasFor(provider)` converts the declarations to
  * the wire format of the given provider.
  */
@@ -29,7 +30,7 @@ const MAX_LIST_ITEMS = 30;
 // `run` enforces -- otherwise the offset the model is told to use next would
 // itself be the part that gets truncated away.
 const PAGE_CHUNK = 6000;
-// a tool must not be able to hold the `llmResponse` lock forever.
+// a tool must not be able to hold the `llmResponse` booking forever.
 const TOOL_TIMEOUT = 15000;
 
 // Hosts the page's own JavaScript could never reach, so a request to one of them
@@ -64,25 +65,47 @@ function runtimeAsync(action, args) {
     });
 }
 
+/*
+ * One piece of a result too long to send whole, ending at a line boundary
+ * whenever there is more to come.
+ *
+ * A blind cut lands mid-construct: half of `[label](url)` leaves the model a
+ * destination that goes nowhere and a bracket the converter never wrote, which is
+ * exactly what escaping the page's own brackets is there to prevent. A line is
+ * the smallest unit that is whole on its own -- a fenced code block is not, but a
+ * cut inside one costs nothing but the fence.
+ *
+ * A piece with no line break in reach is served as it is: shrinking it to almost
+ * nothing would mean an offset that never gets to the end of a page.
+ */
+function chunkAt(str, start, size) {
+    const raw = str.slice(start, start + size);
+    if (start + raw.length >= str.length) {
+        return raw;
+    }
+    const cut = raw.lastIndexOf("\n");
+    return cut > size / 2 ? raw.slice(0, cut) : raw;
+}
+
 function truncate(str, max = MAX_RESULT_LENGTH) {
     if (str.length <= max) {
         return str;
     }
-    return `${str.slice(0, max)}\n\n[truncated, ${str.length - max} more characters]`;
+    const head = chunkAt(str, 0, max);
+    return `${head}\n\n[truncated, ${str.length - head.length} more characters]`;
 }
 
-function htmlToText(html) {
+/*
+ * A fetched page, converted the same way the current page is.
+ *
+ * The document is parsed and never attached, so nothing in it runs. `baseUrl` is
+ * required rather than optional: a parsed document's own `baseURI` is this
+ * extension's, so without it every relative link on the page would be resolved
+ * against the extension origin and handed to the model as if it worked.
+ */
+function htmlToMarkdown(html, baseUrl) {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    doc.querySelectorAll("script,style,noscript,svg,iframe,link").forEach((e) => e.remove());
-    return normalizeText(doc.body ? doc.body.textContent : "");
-}
-
-function normalizeText(text) {
-    return (text || "")
-        .replace(/[ \t\r\f\v]+/g, " ")
-        .replace(/ ?\n ?/g, "\n")
-        .replace(/\n{3,}/g, "\n\n")
-        .trim();
+    return doc.body ? toMarkdown(doc.body, { baseUrl }) : "";
 }
 
 /*
@@ -149,8 +172,8 @@ function showValue(value) {
     }
 }
 
-const WHAT_PAGE = "The text of the current page";
-const WHAT_PICKED = "The text the user picked on the page";
+const WHAT_PAGE = "The current page, as Markdown";
+const WHAT_PICKED = "What the user picked on the page, as Markdown";
 
 const definitions = [
     {
@@ -160,7 +183,7 @@ const definitions = [
          * conversation until the model asks for it.
          */
         name: "read_page",
-        description: "Read the text of the page the user is looking at. Call it whenever the question is about \"this page\", \"the article\", \"it\", or anything else the user did not spell out -- the content of the page is not part of this conversation until you ask for it, so do not guess it. If the user picked part of the page before opening the chat, only that part is returned.",
+        description: "Read the page the user is looking at, as Markdown -- so link targets, image alt text, table structure and form actions are all preserved. Call it whenever the question is about \"this page\", \"the article\", \"it\", or anything else the user did not spell out -- the content of the page is not part of this conversation until you ask for it, so do not guess it. If the user picked part of the page before opening the chat, only that part is returned.",
         confirmAs: "read the text of the page you are on and send it to the LLM provider",
         parameters: {
             type: "object",
@@ -173,13 +196,13 @@ const definitions = [
             required: [],
         },
         run: async ({ offset }, ctx) => {
-            if (typeof ctx.pageText !== "function") {
-                return "The text of the current page is not available in this chat.";
+            if (typeof ctx.pageMarkdown !== "function") {
+                return "The content of the current page is not available in this chat.";
             }
-            const { text: raw, picked } = await ctx.pageText();
-            // `innerText` keeps the blank lines a layout leaves behind, and every
-            // one of them costs the same as a word of the answer.
-            const text = normalizeText(raw);
+            const { markdown, picked } = await ctx.pageMarkdown();
+            // `tidy` is the converter's own rule, applied here too because what the
+            // frame answers with is not this module's to assume anything about
+            const text = tidy(markdown);
             const what = picked ? WHAT_PICKED : WHAT_PAGE;
             if (!text) {
                 return `${what} could not be read: it may be empty, still loading, or rendered in a way that leaves no text behind. Ask the user what the page says rather than guessing.`;
@@ -188,7 +211,7 @@ const definitions = [
             if (start >= text.length) {
                 return `${what} is only ${text.length} characters long, so offset ${start} is past its end.`;
             }
-            const chunk = text.slice(start, start + PAGE_CHUNK);
+            const chunk = chunkAt(text, start, PAGE_CHUNK);
             const end = start + chunk.length;
             const left = text.length - end;
             return [
@@ -276,7 +299,7 @@ const definitions = [
     },
     {
         name: "fetch_url",
-        description: "Fetch a web page and return its visible text. Use it to read a link found on the current page or in the user's history, to check a fact, or to gather information the current page only references. Only the text is returned, no images and no scripts.",
+        description: "Fetch a web page and return its content as Markdown, with link targets, image alt text and table structure preserved. Use it to read a link found on the current page or in the user's history, to check a fact, or to gather information the current page only references. Only the markup is read, no scripts run and no images are downloaded.",
         confirmAs: "fetch that URL and send its text to the LLM provider",
         // the argument IS the risk here: a URL is also a way to send data out
         warn: ({ url }) => {
@@ -309,14 +332,14 @@ const definitions = [
             if (resp.error) {
                 return `Failed to fetch ${url}: ${resp.error}`;
             }
-            const text = htmlToText(resp.text || "");
+            const text = htmlToMarkdown(resp.text || "", url);
             if (!text) {
                 return `Fetched ${url} but it contains no readable text, it is probably rendered by JavaScript.`;
             }
             // cap before fencing, so the closing fence is never what the outer
             // truncate cuts off -- an unclosed fence is exactly what a page trying
             // to break out of it would want
-            return `Text of ${url}.\n\n${UNTRUSTED_NOTE}\n\n${fenced(truncate(text, PAGE_CHUNK))}`;
+            return `${url} as Markdown.\n\n${UNTRUSTED_NOTE}\n\n${fenced(truncate(text, PAGE_CHUNK))}`;
         },
     },
 ];

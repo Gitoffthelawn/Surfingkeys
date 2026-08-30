@@ -156,27 +156,42 @@ class EventStreamParser {
     }
 }
 
-let awsClient = null;
-function bedrock(req, opts) {
-    /*
-     * Exactly one completion, whatever route the request ends by -- including the
-     * ones that never reach the stream, an error body and a rejected fetch: the
-     * caller books the shared `llmResponse` handler for the request, and a request
-     * that never completes holds that booking forever, which silently disables
-     * every LLM feature in the frame until a reload.
-     */
+/*
+ * Guard a provider's callbacks so the caller is completed exactly once, whatever
+ * route the request ends by: a normal stop, an error frame mid-stream, a malformed
+ * chunk, a connection dropped without a terminator, an error body that is not a
+ * stream at all, or a fetch that never connected.
+ *
+ * The caller books the shared `llmResponse` handler for the duration of a request,
+ * and nothing but a completion releases it -- so a request that ends without one
+ * holds that booking forever, which silently disables every LLM feature in that
+ * frame until a reload. Every provider below therefore reports through `fail`
+ * rather than calling `opts.onComplete` itself.
+ */
+function completeOnce(opts) {
     let completed = false;
-    function complete(m) {
+    const complete = (message) => {
         if (completed) {
             return;
         }
         completed = true;
-        opts.onComplete(m);
-    }
-    function fail(msg) {
-        opts.onChunk(msg);
-        complete({});
-    }
+        opts.onComplete(message);
+    };
+    return {
+        complete,
+        fail: (msg) => {
+            opts.onChunk(msg);
+            complete({});
+        },
+        // whether the caller has been released, for a read loop deciding whether
+        // there is anything left to wait for
+        isDone: () => completed,
+    };
+}
+
+let awsClient = null;
+function bedrock(req, opts) {
+    const { complete, fail, isDone } = completeOnce(opts);
 
     if (!awsClient) {
         fail("Please set up bedrock correctly.");
@@ -295,7 +310,7 @@ function bedrock(req, opts) {
                 if (done) {
                     // the stream ended without message_stop, e.g. the connection
                     // dropped: the caller still has to be released
-                    if (!completed) {
+                    if (!isDone()) {
                         fail("\n\n**Warning:** the response ended unexpectedly.");
                     }
                     return;
@@ -309,7 +324,7 @@ function bedrock(req, opts) {
                     handleEvent(JSON.parse(atob(m.payload.bytes)));
                 }
 
-                if (completed) {
+                if (isDone()) {
                     return;
                 }
                 // Continue reading
@@ -347,23 +362,7 @@ bedrock.init = function(opts) {
 
 function ollama(req, opts) {
     const decoder = new TextDecoder();
-
-    // Exactly one completion, whatever route the stream ends by: the caller books
-    // the shared `llmResponse` handler for the request, and a stream that never
-    // completes holds that booking forever, which silently disables every LLM
-    // feature in the frame until a reload.
-    let completed = false;
-    const complete = (message) => {
-        if (completed) {
-            return;
-        }
-        completed = true;
-        opts.onComplete(message);
-    };
-    const fail = (msg) => {
-        opts.onChunk(msg);
-        complete({});
-    };
+    const { complete, fail, isDone } = completeOnce(opts);
 
     fetch('http://localhost:11434/api/chat', {
         method: 'POST',
@@ -388,7 +387,7 @@ function ollama(req, opts) {
                 if (done) {
                     // the stream ended without a `done` line, e.g. ollama was shut
                     // down mid-answer: the caller still has to be released
-                    if (!completed) {
+                    if (!isDone()) {
                         fail("\n\n**Warning:** the response ended unexpectedly.");
                     }
                     return;
@@ -450,23 +449,7 @@ const customClients = {};
 function openAICompatible(req, opts, client) {
     const decoder = new TextDecoder();
     const abortCtrl = new AbortController();
-
-    // Exactly one completion, whatever route the stream ends by: the caller books
-    // the shared `llmResponse` handler for the request, and a stream that never
-    // completes holds that booking forever, which silently disables every LLM
-    // feature in the frame until a reload.
-    let completed = false;
-    const complete = (message) => {
-        if (completed) {
-            return;
-        }
-        completed = true;
-        opts.onComplete(message);
-    };
-    const fail = (msg) => {
-        opts.onChunk(msg);
-        complete({});
-    };
+    const { complete, fail } = completeOnce(opts);
 
     if (!client) {
         fail('Please set up the provider correctly.');

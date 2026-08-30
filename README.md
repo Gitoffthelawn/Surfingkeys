@@ -651,7 +651,7 @@ To use the feature, you need to set up your credentials/API keys first, like thi
         }
     };
 
-You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start chatting with AI about the selected text — `read_page` then returns only that selection, not the whole page.
+You can also use `A` in visual mode. Press `v` or `V` to enter visual mode, then `v` again to select the text you'd like to chat with AI about, then `A` to call out the LLM chat box. Now start chatting with AI about the selected text — `read_page` then returns only that selection, not the whole page, and a half-selected link is still a link.
 
 A conversation is kept per site, so returning to any page of that site — or reloading — resumes where you left off. `/clear` starts a fresh one. A conversation you resume under a different provider than the one it was held with keeps its questions and answers, but not the tool results, which only the original provider can be given back.
 
@@ -674,6 +674,28 @@ While chatting, the LLM can look things up in your browser instead of guessing. 
 | `fetch_url` | read another page, to follow a link or check a fact the current page only references |
 
 So you can ask things like *"summarize this"*, *"which of my open tabs covers authentication?"*, *"find the Rust article I read last week and summarize it"*, or *"open the first link on this page and compare it with what I'm reading"*.
+
+`read_page` and `fetch_url` hand over the page as Markdown rather than as flat text, because flat text keeps the words and drops everything the words point at. A link becomes its label with no destination, an image contributes nothing however carefully its `alt` was written, a table collapses into one run-on line, and a form becomes a few stray captions with no hint of what submitting it would do — and the model cannot tell that any of it was withheld, so it guesses. As Markdown you get instead:
+
+    Compare [the token bucket](https://en.wikipedia.org/wiki/Token_bucket) with:
+
+    | Algorithm | Burst | Memory |
+    | --- | --- | --- |
+    | Token bucket | yes | O(1) |
+
+    ![A bucket filling at a fixed rate](https://example.com/img/bucket.svg)
+
+    [form POST https://example.com/subscribe]
+
+    [email name=email label="Email" placeholder="you@example.com" required]
+
+    [hidden field csrf_token]
+
+    [select name=cadence] options: Weekly (selected) | Monthly
+
+    [button caption="Subscribe"]
+
+So *"what would this form send, and where?"* and *"open the second link in the table"* are answerable. Links are absolute, so the model can pass one straight to `fetch_url`; the value of a hidden field or a password is never included, only its name, since these are session tokens on their way to a third party; a `data:` image is named but not inlined; an `alt=""` image is dropped, which is what the empty attribute means; and anything the page you are on hides with CSS is left out, as it is not what you are reading — a page fetched by `fetch_url` is never laid out, so there nothing can be measured as hidden and nothing is dropped on that ground. Brackets in the page's own text are escaped, so a page cannot print something that reads like a link or a form of its own and have the model take it for one. URLs do make the text longer, so a link-heavy page may take a second `read_page` call — the result says how much is left and which offset continues it.
 
 Tool use works with every provider. The declarations are sent in the shape each one speaks: the Anthropic shape to Bedrock, and the OpenAI function-calling shape to the custom providers and to Ollama, whose own `/api/chat` accepts that same shape. Note that a small local model may ignore the tools or call them with poor arguments — this works best with a capable model, and a service whose model has no function calling at all will answer with an error.
 

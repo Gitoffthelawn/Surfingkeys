@@ -1,5 +1,6 @@
 import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import KeyboardUtils from './keyboardUtils';
+import { selectionToMarkdown } from './pageMarkdown.js';
 import {
     actionWithSelectionPreserved,
     createElementWithContent,
@@ -598,11 +599,12 @@ export default function(api, clipboard, insert, normal, hints, visual, front, br
         front.openOmnibar({type: "LLMChat"});
     });
     vmapkey('A', '#8Open llm chat', function() {
-        const sel = window.getSelection().toString();
         front.openOmnibar({type: "LLMChat", extra: {
             // what the user pointed at, so `read_page` serves this instead of the
-            // whole page; it cannot be read later, the omnibar takes the selection
-            picked: sel
+            // whole page; it cannot be read later, the omnibar takes the selection.
+            // Converted like the page itself rather than taken as a string: a
+            // selection over a list of links is mostly the links.
+            picked: selectionToMarkdown()
         }});
     });
     mapkey('yi', '#7Yank text of an input', function() {

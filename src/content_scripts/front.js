@@ -15,6 +15,7 @@ import {
     tabOpenLink,
 } from './common/utils.js';
 import { RUNTIME, dispatchSKEvent, runtime } from './common/runtime.js';
+import toMarkdown from './common/pageMarkdown.js';
 import createUiHost from './uiframe.js';
 
 function createFront(insert, normal, hints, visual, browser) {
@@ -687,8 +688,22 @@ function createFront(insert, normal, hints, visual, browser) {
         }
     };
 
+    /*
+     * The words on the page, for the completers that count them -- the omnibar's
+     * and the editor's. They split on non-word characters and rank what is left, so
+     * this stays plain text: Markdown would feed them URL fragments and punctuation
+     * as if those were words the user might want to type.
+     */
     _actions["getPageText"] = function(response) {
         return document.body.innerText;
+    };
+
+    /*
+     * The page as Markdown, for the LLM chat's `read_page` -- see pageMarkdown.js
+     * for why a model is handed that rather than text.
+     */
+    _actions["getPageMarkdown"] = function(response) {
+        return toMarkdown(document.body);
     };
 
     var _pendingQuery;

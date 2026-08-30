@@ -34,7 +34,7 @@ export default function (omnibar, front) {
     let inputs = [];
     let curInputIdx = 0;
 
-    const llmTools = LLMTools({ pageText });
+    const llmTools = LLMTools({ pageMarkdown });
 
     /*
      * What the user pointed at, when the chat was opened from visual mode or from
@@ -48,9 +48,9 @@ export default function (omnibar, front) {
      */
     let picked = "";
 
-    // reading the text of the page the user is already looking at is local and
-    // immediate, so a wait this long means the frame is not going to answer
-    const PAGE_TEXT_TIMEOUT = 5000;
+    // reading the page the user is already looking at is local and immediate, so a
+    // wait this long means the frame is not going to answer
+    const PAGE_MARKDOWN_TIMEOUT = 5000;
 
     /*
      * The snapshot `read_page` serves for the question being answered, dropped when
@@ -62,36 +62,40 @@ export default function (omnibar, front) {
      * scrolled, lazy-loaded or re-rendered, and the model would be handed
      * overlapping or skipped text with nothing to show that anything was wrong.
      */
-    let pageTextSnapshot = null;
+    let pageMarkdownSnapshot = null;
 
     /**
-     * The page text `read_page` serves.
+     * The page `read_page` serves, as Markdown.
      *
      * This chat runs in the frontend iframe, an extension page, so it cannot read
-     * the page itself: `getPageText` is answered by the content script of the
+     * the page itself: `getPageMarkdown` is answered by the content script of the
      * frame that opened the omnibar. That reply is not guaranteed -- front.js only
      * acks a truthy return, so an empty page never answers at all -- and the tool
      * loop holds the shared `llmResponse` booking while it waits, so this always
      * settles.
      *
-     * @returns {Promise<{text: string, picked: boolean}>}
+     * `markdown`, not `text`: the caller must not reflow what it gets back, since
+     * the indentation is what tells a nested list from a flat one and a code block
+     * from a paragraph.
+     *
+     * @returns {Promise<{markdown: string, picked: boolean}>}
      */
-    function pageText() {
+    function pageMarkdown() {
         if (picked) {
-            return Promise.resolve({ text: picked, picked: true });
+            return Promise.resolve({ markdown: picked, picked: true });
         }
-        if (pageTextSnapshot) {
-            return pageTextSnapshot;
+        if (pageMarkdownSnapshot) {
+            return pageMarkdownSnapshot;
         }
-        pageTextSnapshot = new Promise((resolve) => {
-            const settle = (text) => resolve({ text: text || "", picked: false });
-            const timer = setTimeout(() => settle(""), PAGE_TEXT_TIMEOUT);
-            front.contentCommand({ action: 'getPageText' }, (message) => {
+        pageMarkdownSnapshot = new Promise((resolve) => {
+            const settle = (markdown) => resolve({ markdown: markdown || "", picked: false });
+            const timer = setTimeout(() => settle(""), PAGE_MARKDOWN_TIMEOUT);
+            front.contentCommand({ action: 'getPageMarkdown' }, (message) => {
                 clearTimeout(timer);
                 settle(message && message.data);
             });
         });
-        return pageTextSnapshot;
+        return pageMarkdownSnapshot;
     }
 
     /*
@@ -473,7 +477,7 @@ export default function (omnibar, front) {
         toolRounds = 0;
         // a new question is asked about the page as it is now, and it is the only
         // point at which re-reading it cannot misalign an offset mid-answer
-        pageTextSnapshot = null;
+        pageMarkdownSnapshot = null;
         if (runtime.bookMessage('llmResponse', async (resp) => {
             if (resp.chunk) {
                 onChunk(resp.chunk);
@@ -784,10 +788,10 @@ export default function (omnibar, front) {
 
     /*
      * Write the conversation out. Called at every point it changes rather than
-     * only when the frontend is destroyed: that teardown message is sent by
+     * left to the destroy listener below: that teardown message is sent by
      * front.detach() (tab switch, title change) and never on a reload or a
-     * navigation, since the iframe just dies -- so a conversation used to be lost
-     * exactly when the user would most expect it back.
+     * navigation, since the iframe just dies -- so relying on it loses a
+     * conversation exactly when the user would most expect it back.
      *
      * The provider is stored with it because the tool turns are in its wire shape,
      * and replaying them to another provider is a request it rejects.

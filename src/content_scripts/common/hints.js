@@ -2,6 +2,7 @@ import { RUNTIME, dispatchSKEvent, runtime } from './runtime.js';
 import Mode from './mode';
 import KeyboardUtils from './keyboardUtils';
 import Trie from './trie';
+import toMarkdown from './pageMarkdown.js';
 import {
     createElementWithContent,
     dispatchMouseEvent,
@@ -111,8 +112,8 @@ kbd {
         feature_group: 17,
         code: function() {
             // the element the user picked, which `read_page` serves in place of the
-            // whole page
-            openOmnibar({type: "LLMChat", extra: {picked: overlay.link.innerText}});
+            // whole page -- as Markdown, so the links and images inside it survive
+            openOmnibar({type: "LLMChat", extra: {picked: toMarkdown(overlay.link)}});
             self.exit();
         }
     });

@@ -707,6 +707,30 @@ function createFront(insert, normal, hints, visual, browser) {
     };
 
     /*
+     * The same Markdown, for a chat that is NOT in this tab: the LLM chat's
+     * `read_tab`.
+     *
+     * A second door is needed because the first one is this tab's frontend asking
+     * its own content script over postMessage, and a chat in another tab cannot
+     * reach that far. This one arrives from the background, the only place that can
+     * address a tab it does not live in, and it is sent to frame 0 alone -- so the
+     * top document answers and no iframe answers over it.
+     *
+     * The reply is synchronous by necessity: runtime.js never returns true from its
+     * message listener, so the channel is closed the moment this returns and a
+     * handler that answered later would answer nobody. A conversion that throws is
+     * reported rather than left silent, since silence reaches the model as a
+     * timeout it cannot act on.
+     */
+    runtime.on('getTabMarkdown', function(msg, sender, response) {
+        try {
+            response({markdown: document.body ? toMarkdown(document.body) : ""});
+        } catch (e) {
+            response({error: e.message});
+        }
+    });
+
+    /*
      * Point the user at a passage on the page, for the LLM chat's
      * `highlight_on_page`: the answer says what the page says, this says where it
      * says it. The marks are the ones `/` leaves behind, so `n` walks them and Esc

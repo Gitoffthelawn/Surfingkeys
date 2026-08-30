@@ -1427,6 +1427,61 @@ function start(browser) {
             });
         });
     };
+    /*
+     * The text of ANOTHER tab, for the LLM chat's `read_tab` -- the counterpart of
+     * `request` above: that one asks the network for a URL, this one asks the tab
+     * the user already has open, so the page arrives as their browser rendered it,
+     * after its scripts ran and with their session on it.
+     *
+     * Only the content script of that tab can read it, and only the background can
+     * address a tab it does not live in, so this is the middle of that chain. Frame
+     * 0 alone is asked: the answer must be the top document, not whichever iframe
+     * replies first.
+     *
+     * The callback form of sendMessage rather than its promise, since `chrome` in
+     * Firefox has no promises (see sendTabMessage), and every failure is answered as
+     * an `error` string: a tab with no content script in it -- a browser page, the
+     * PDF viewer, an unloaded tab -- rejects here, and the caller has to be able to
+     * tell the model that instead of timing out.
+     *
+     * `self` says the caller asked for its own tab, which its own `read_page` serves
+     * better; it is a hint, so a sender without a tab simply does not get it.
+     */
+    self.getTabMarkdown = function(message, sender, sendResponse) {
+        const tabId = message.tabId;
+        if (!Number.isInteger(tabId)) {
+            _response(message, sendResponse, {
+                error: "no tab id was given"
+            });
+            return;
+        }
+        const isSelf = !!(sender.tab && sender.tab.id === tabId);
+        try {
+            chrome.tabs.sendMessage(tabId, {
+                subject: "getTabMarkdown"
+            }, {frameId: 0}, function(res) {
+                if (chrome.runtime.lastError) {
+                    _response(message, sendResponse, {
+                        error: chrome.runtime.lastError.message
+                    });
+                } else if (!res) {
+                    _response(message, sendResponse, {
+                        error: "the tab did not answer"
+                    });
+                } else {
+                    _response(message, sendResponse, {
+                        markdown: res.markdown || "",
+                        error: res.error,
+                        self: isSelf
+                    });
+                }
+            });
+        } catch (e) {
+            _response(message, sendResponse, {
+                error: e.message
+            });
+        }
+    };
     self.requestImage = function(message, sender, sendResponse) {
         fetch(message.url, {
             method: "GET"
